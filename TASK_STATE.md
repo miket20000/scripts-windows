@@ -39,10 +39,8 @@ coordination point.
   and five-minute triggers, non-overlap, network requirement, battery support,
   and a five-minute execution limit. Its action points to
   `git-sync\safe-git-sync.ps1` and launches PowerShell with
-  `-WindowStyle Hidden`; the task entry itself remains visible in Task
-  Scheduler. Persisted configuration passed readback, and clean scheduled
-  runs completed with `LastTaskResult=0`, first publishing the configuration
-  commit and then returning `NOOP`.
+  `-WindowStyle Minimized`; the task entry itself remains visible in Task
+  Scheduler. Persisted configuration passed readback.
 - Both schedulers were disabled before changing their paths and re-enabled
   only after their new configurations passed real execution tests.
 
@@ -77,10 +75,12 @@ coordination point.
 - `PASS` — post-relocation real devbox systemd service run and Windows Task
   Scheduler run, both returning `NOOP` on clean commit `90418bb`; both periodic
   schedulers were then confirmed enabled.
-- `PASS` — Windows task action readback includes `-WindowStyle Hidden`. Real
-  scheduler invocations completed with `LastTaskResult=0`, publishing commit
-  `03b67a7` and then returning `NOOP` on the clean aligned worktree. The devbox
-  service subsequently fast-forwarded to the same commit with status `PULLED`.
+- `FAIL` — although the Windows task action persisted `-WindowStyle Hidden`
+  and completed successfully, user observation confirmed that its console
+  window could still appear briefly.
+- `PASS` — after switching to `-WindowStyle Minimized`, action readback matched
+  the requested mode and a real scheduler invocation completed with
+  `LastTaskResult=0`. `PAUSED_DIRTY` was expected for the uncommitted change.
 
 ## Important files
 

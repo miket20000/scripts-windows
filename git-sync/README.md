@@ -22,7 +22,7 @@ Register or refresh the Windows task:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\configure-git-sync-task.ps1
 ```
 
-The task runs PowerShell with a hidden window 30 seconds after interactive
+The task runs PowerShell with a minimized window 30 seconds after interactive
 logon and then every five minutes. Its log is stored under
 `%LOCALAPPDATA%\scripts-windows-git-sync\sync.log`.
 
