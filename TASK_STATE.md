@@ -39,10 +39,15 @@ coordination point.
   and five-minute triggers, non-overlap, network requirement, battery support,
   and a five-minute execution limit. Its persisted configuration passed
   readback after account-name comparison was corrected to use the user SID.
+- The Windows task completed with `LastTaskResult=0`: an automatic run pushed
+  commit `da967c2`, and a manual scheduler invocation immediately afterward
+  returned `NOOP` on the same clean commit.
+- The next devbox timer run automatically fast-forwarded from `069ac99` to
+  `da967c2` with status `PULLED`, `Result=success`, and `ExecMainStatus=0`.
 - The stale source and worktree paths in
   `codex-telegram-notify/TASK_STATE.md` now point to `scripts-windows`.
-- Deployment completion is pending the real Windows scheduler run and final
-  cross-host parity check.
+- Both worktrees and `origin/main` were clean and aligned at `da967c2` after
+  the end-to-end scheduler test. Deployment is complete.
 
 ## Verification
 
@@ -61,6 +66,10 @@ coordination point.
   system unit `/usr/lib/systemd/user/spice-vdagent.service`.
 - `PASS` — real `systemd --user` execution with non-interactive SSH and a clean
   aligned postcondition at `069ac99`.
+- `PASS` — real Windows Task Scheduler push and no-op runs using the configured
+  interactive principal and non-interactive SSH environment.
+- `PASS` — automatic devbox timer pull of the Windows-published follow-up
+  commit, followed by a clean matching HEAD and a scheduled next run.
 
 ## Important files
 
@@ -78,12 +87,15 @@ coordination point.
   or commits the changes.
 - Concurrent commits on both hosts deliberately latch as divergence and
   require manual reconciliation.
-- The Windows task must still be started manually after this readback fix is
-  committed so that its real scheduler environment and log can be verified.
+- The periodic Windows trigger has a ten-year repetition duration because the
+  ScheduledTasks cmdlets require a bounded duration for this trigger form.
+  Re-register the task before that duration expires or when paths change.
 
 ## START HERE
 
-Commit and push the Windows SID readback correction and this state snapshot.
-Run the Windows task through Task Scheduler, verify exit code and log output,
-then confirm the devbox timer fast-forwards the correction and both worktrees
-remain clean at the same commit. Record the final deployment state.
+For routine health checks, inspect the Windows task `LastTaskResult` and
+`%LOCALAPPDATA%\scripts-windows-git-sync\sync.log`, then inspect
+`systemctl --user status scripts-windows-git-sync.timer` and the service
+journal on devbox. If either executor reports `FAIL_DIVERGED`, reconcile the
+two commits manually on one host and push the resolved `main`; never force-push
+or delete either local commit as part of automated recovery.
