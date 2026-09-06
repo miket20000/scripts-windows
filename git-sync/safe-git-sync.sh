@@ -6,7 +6,7 @@ export GCM_INTERACTIVE=Never
 export GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=2'
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
-repo=$script_dir
+repo=$(CDPATH='' cd -- "$script_dir/.." && pwd -P)
 branch=main
 remote=origin
 dry_run=false

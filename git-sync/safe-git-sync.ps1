@@ -16,7 +16,7 @@ $script:GitExecutable = $null
 $script:ResolvedRepoPath = $null
 
 if ([string]::IsNullOrWhiteSpace($RepoPath)) {
-    $RepoPath = $PSScriptRoot
+    $RepoPath = Split-Path -Parent $PSScriptRoot
 }
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
     $LogPath = Join-Path $env:LOCALAPPDATA "scripts-windows-git-sync\sync.log"

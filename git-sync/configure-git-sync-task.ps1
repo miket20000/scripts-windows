@@ -9,10 +9,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($RepoPath)) {
-    $RepoPath = $PSScriptRoot
+    $RepoPath = Split-Path -Parent $PSScriptRoot
 }
 $resolvedRepoPath = (Resolve-Path -LiteralPath $RepoPath).Path
-$syncScript = Join-Path $resolvedRepoPath "safe-git-sync.ps1"
+$syncScript = Join-Path $PSScriptRoot "safe-git-sync.ps1"
 if (-not (Test-Path -LiteralPath $syncScript -PathType Leaf)) {
     throw "Sync executor does not exist: $syncScript"
 }

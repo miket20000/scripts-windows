@@ -48,6 +48,10 @@ coordination point.
   `codex-telegram-notify/TASK_STATE.md` now point to `scripts-windows`.
 - Both worktrees and `origin/main` were clean and aligned at `da967c2` after
   the end-to-end scheduler test. Deployment is complete.
+- Relocation to the `git-sync` subdirectory is in progress. Both schedulers
+  were deliberately disabled before changing paths. The executors, Windows
+  configurator, app README, and versioned systemd units now live under
+  `git-sync`; the repository root remains their synchronization target.
 
 ## Verification
 
@@ -70,16 +74,21 @@ coordination point.
   interactive principal and non-interactive SSH environment.
 - `PASS` — automatic devbox timer pull of the Windows-published follow-up
   commit, followed by a clean matching HEAD and a scheduled next run.
+- `PASS` — parser and syntax checks after relocation, plus a Windows dry run
+  from `git-sync/safe-git-sync.ps1` confirming that its default repository is
+  the parent worktree. `PAUSED_DIRTY` was the expected result for the
+  uncommitted relocation candidate.
 
 ## Important files
 
-- `safe-git-sync.ps1` and `safe-git-sync.sh` — fail-latched synchronization
-  executors.
-- `configure-git-sync-task.ps1` — Windows task registration and readback.
-- `systemd/user/scripts-windows-git-sync.service` and `.timer` — devbox user
-  units.
+- `git-sync/safe-git-sync.ps1` and `git-sync/safe-git-sync.sh` — fail-latched
+  synchronization executors.
+- `git-sync/configure-git-sync-task.ps1` — Windows task registration and
+  readback.
+- `git-sync/systemd/user/scripts-windows-git-sync.service` and `.timer` —
+  devbox user units.
 - `.gitattributes` — explicit cross-platform line-ending policy.
-- `README.md` — operating and recovery instructions.
+- `git-sync/README.md` — operating and recovery instructions.
 
 ## Risks and open checks
 
@@ -90,12 +99,13 @@ coordination point.
 - The periodic Windows trigger has a ten-year repetition duration because the
   ScheduledTasks cmdlets require a bounded duration for this trigger form.
   Re-register the task before that duration expires or when paths change.
+- Both schedulers are intentionally disabled until the relocation commit is
+  deployed and their installed actions are updated to the new paths.
 
 ## START HERE
 
-For routine health checks, inspect the Windows task `LastTaskResult` and
-`%LOCALAPPDATA%\scripts-windows-git-sync\sync.log`, then inspect
-`systemctl --user status scripts-windows-git-sync.timer` and the service
-journal on devbox. If either executor reports `FAIL_DIVERGED`, reconcile the
-two commits manually on one host and push the resolved `main`; never force-push
-or delete either local commit as part of automated recovery.
+Review and commit the relocation candidate, push it, and fast-forward the
+devbox worktree. Reinstall the devbox units from `git-sync/systemd/user`, rerun
+the Windows configurator from `git-sync`, execute both schedulers once, and
+only then re-enable their periodic triggers. Confirm both worktrees and
+`origin/main` are clean and aligned before marking relocation complete.

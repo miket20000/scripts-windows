@@ -1,5 +1,5 @@
 [Unit]
-Description=Run scripts-windows Git synchronization every five minutes
+Description=Run git-sync for scripts-windows every five minutes
 
 [Timer]
 OnBootSec=2min
