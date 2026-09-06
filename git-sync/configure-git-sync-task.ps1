@@ -19,7 +19,7 @@ if (-not (Test-Path -LiteralPath $syncScript -PathType Leaf)) {
 
 $powerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $logPath = Join-Path $env:LOCALAPPDATA "scripts-windows-git-sync\sync.log"
-$arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -RepoPath "{1}" -Branch "{2}" -Remote "{3}" -LogPath "{4}"' -f `
+$arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -RepoPath "{1}" -Branch "{2}" -Remote "{3}" -LogPath "{4}"' -f `
     $syncScript, $resolvedRepoPath, $Branch, $Remote, $logPath
 $action = New-ScheduledTaskAction -Execute $powerShell -Argument $arguments
 
