@@ -33,8 +33,8 @@ only to apply the required idle-time condition.
 
 ## Current status
 
-- Project source directory: `/home/miket/coding/powershell/codex-telegram-notify`.
-- The Git worktree root is `/home/miket/coding/powershell`; this project is a
+- Project source directory: `/home/miket/coding/scripts-windows/codex-telegram-notify`.
+- The Git worktree root is `/home/miket/coding/scripts-windows`; this project is a
   subdirectory of that worktree.
 - Source migration is complete: `telegram-notify.sh` and
   `setup-telegram-notify.sh` replace the PowerShell scripts. They require Bash,
