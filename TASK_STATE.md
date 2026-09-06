@@ -25,33 +25,23 @@ coordination point.
 
 ## Current status
 
-- Before implementation, both worktrees were clean on commit
-  `ea5beaeac31261fe7f14a93942e750450caa908d` and tracked the same
-  `origin/main`.
 - The Windows host has Git 2.55.0 and uses Task Scheduler.
 - The devbox has Git 2.53.0, a running user systemd manager, and `Linger=yes`.
-- Implementation commit `069ac99` is on `origin/main` and was fast-forwarded
-  to the devbox worktree.
-- The devbox user service and timer are installed. The service completed twice
-  with `Result=success`, `ExecMainStatus=0`, and `NOOP`; the timer is enabled,
-  active, and waiting on its five-minute schedule.
+- Relocation commit `90418bb` is on `origin/main` and was fast-forwarded to the
+  devbox worktree. The executors, Windows configurator, app README, and
+  versioned systemd units now live under `git-sync`; the repository root
+  remains their synchronization target.
+- The devbox user service was reinstalled from `git-sync/systemd/user`. Its
+  action points to `/home/miket/coding/scripts-windows/git-sync/safe-git-sync.sh`,
+  it completed with `Result=success`, `ExecMainStatus=0`, and `NOOP`, and the
+  timer is enabled, active, and waiting on its five-minute schedule.
 - The Windows task is registered with an interactive limited principal, logon
   and five-minute triggers, non-overlap, network requirement, battery support,
-  and a five-minute execution limit. Its persisted configuration passed
-  readback after account-name comparison was corrected to use the user SID.
-- The Windows task completed with `LastTaskResult=0`: an automatic run pushed
-  commit `da967c2`, and a manual scheduler invocation immediately afterward
-  returned `NOOP` on the same clean commit.
-- The next devbox timer run automatically fast-forwarded from `069ac99` to
-  `da967c2` with status `PULLED`, `Result=success`, and `ExecMainStatus=0`.
-- The stale source and worktree paths in
-  `codex-telegram-notify/TASK_STATE.md` now point to `scripts-windows`.
-- Both worktrees and `origin/main` were clean and aligned at `da967c2` after
-  the end-to-end scheduler test. Deployment is complete.
-- Relocation to the `git-sync` subdirectory is in progress. Both schedulers
-  were deliberately disabled before changing paths. The executors, Windows
-  configurator, app README, and versioned systemd units now live under
-  `git-sync`; the repository root remains their synchronization target.
+  and a five-minute execution limit. Its action points to
+  `git-sync\safe-git-sync.ps1`; persisted configuration passed readback, and a
+  real scheduler run completed with `LastTaskResult=0` and `NOOP`.
+- Both schedulers were disabled before changing their paths and re-enabled
+  only after their new configurations passed real execution tests.
 
 ## Verification
 
@@ -78,6 +68,12 @@ coordination point.
   from `git-sync/safe-git-sync.ps1` confirming that its default repository is
   the parent worktree. `PAUSED_DIRTY` was the expected result for the
   uncommitted relocation candidate.
+- `PASS` — post-relocation `bash -n`, `shellcheck`, and
+  `systemd-analyze --user verify` on devbox. The only verify warning was the
+  pre-existing unrelated `spice-vdagent.service` warning.
+- `PASS` — post-relocation real devbox systemd service run and Windows Task
+  Scheduler run, both returning `NOOP` on clean commit `90418bb`; both periodic
+  schedulers were then confirmed enabled.
 
 ## Important files
 
@@ -99,13 +95,12 @@ coordination point.
 - The periodic Windows trigger has a ten-year repetition duration because the
   ScheduledTasks cmdlets require a bounded duration for this trigger form.
   Re-register the task before that duration expires or when paths change.
-- Both schedulers are intentionally disabled until the relocation commit is
-  deployed and their installed actions are updated to the new paths.
 
 ## START HERE
 
-Review and commit the relocation candidate, push it, and fast-forward the
-devbox worktree. Reinstall the devbox units from `git-sync/systemd/user`, rerun
-the Windows configurator from `git-sync`, execute both schedulers once, and
-only then re-enable their periodic triggers. Confirm both worktrees and
-`origin/main` are clean and aligned before marking relocation complete.
+For routine health checks, inspect the Windows task `LastTaskResult` and
+`%LOCALAPPDATA%\scripts-windows-git-sync\sync.log`, then inspect
+`systemctl --user status scripts-windows-git-sync.timer` and the service
+journal on devbox. If either executor reports `FAIL_DIVERGED`, reconcile the
+two commits manually on one host and push the resolved `main`; never force-push
+or delete either local commit as part of automated recovery.
