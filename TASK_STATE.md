@@ -30,11 +30,19 @@ coordination point.
   `origin/main`.
 - The Windows host has Git 2.55.0 and uses Task Scheduler.
 - The devbox has Git 2.53.0, a running user systemd manager, and `Linger=yes`.
-- Both executors, the Windows task configurator, the devbox systemd units,
-  line-ending policy, and operating documentation are implemented locally.
+- Implementation commit `069ac99` is on `origin/main` and was fast-forwarded
+  to the devbox worktree.
+- The devbox user service and timer are installed. The service completed twice
+  with `Result=success`, `ExecMainStatus=0`, and `NOOP`; the timer is enabled,
+  active, and waiting on its five-minute schedule.
+- The Windows task is registered with an interactive limited principal, logon
+  and five-minute triggers, non-overlap, network requirement, battery support,
+  and a five-minute execution limit. Its persisted configuration passed
+  readback after account-name comparison was corrected to use the user SID.
 - The stale source and worktree paths in
   `codex-telegram-notify/TASK_STATE.md` now point to `scripts-windows`.
-- Deployment is pending the candidate commit and push.
+- Deployment completion is pending the real Windows scheduler run and final
+  cross-host parity check.
 
 ## Verification
 
@@ -48,10 +56,13 @@ coordination point.
 - `PASS` — Bash executor dry-run against the real devbox worktree.
 - Initial test failures were retained and repaired: Windows execution policy,
   PowerShell 5.1 native stderr handling, and ShellCheck `SC1007` warnings.
-- `BLOCKED` until the candidate is present on the devbox: `systemd-analyze`
-  cannot validate an `ExecStart` executable that has not been pulled yet.
+- `PASS` — `shellcheck` and `systemd-analyze --user verify` on the devbox after
+  the executable was present. The only verify warning came from the unrelated
+  system unit `/usr/lib/systemd/user/spice-vdagent.service`.
+- `PASS` — real `systemd --user` execution with non-interactive SSH and a clean
+  aligned postcondition at `069ac99`.
 
-## Planned files
+## Important files
 
 - `safe-git-sync.ps1` and `safe-git-sync.sh` — fail-latched synchronization
   executors.
@@ -67,13 +78,12 @@ coordination point.
   or commits the changes.
 - Concurrent commits on both hosts deliberately latch as divergence and
   require manual reconciliation.
-- The Windows task and devbox timer must be installed, started once manually,
-  and read back before the deployment is complete.
+- The Windows task must still be started manually after this readback fix is
+  committed so that its real scheduler environment and log can be verified.
 
 ## START HERE
 
-Review the candidate diff and secrets scan, then commit and push it.
-Fast-forward the devbox worktree, validate and install the systemd units, and
-configure the Windows task. Run each scheduler once through its real execution
-environment and verify the persisted configuration, logs, and matching HEADs
-before marking deployment complete.
+Commit and push the Windows SID readback correction and this state snapshot.
+Run the Windows task through Task Scheduler, verify exit code and log output,
+then confirm the devbox timer fast-forwards the correction and both worktrees
+remain clean at the same commit. Record the final deployment state.

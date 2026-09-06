@@ -24,6 +24,7 @@ $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Re
 $action = New-ScheduledTaskAction -Execute $powerShell -Argument $arguments
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$userSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
 $logonTrigger.Delay = "PT30S"
 $periodicTrigger = New-ScheduledTaskTrigger `
@@ -59,6 +60,9 @@ $updatedLogonTrigger = @($updated.Triggers | Where-Object {
 $updatedTimeTrigger = @($updated.Triggers | Where-Object {
     $_.CimClass.CimClassName -eq "MSFT_TaskTimeTrigger"
 })
+$updatedPrincipalSid = (New-Object System.Security.Principal.NTAccount(
+    $updated.Principal.UserId
+)).Translate([System.Security.Principal.SecurityIdentifier]).Value
 if ($updated.Actions.Count -ne 1 -or
     $updated.Actions.Execute -ne $powerShell -or
     $updated.Actions.Arguments -ne $arguments -or
@@ -69,7 +73,7 @@ if ($updated.Actions.Count -ne 1 -or
     $updatedTimeTrigger.Count -ne 1 -or
     $updatedTimeTrigger[0].Repetition.Interval -ne "PT5M" -or
     $updatedTimeTrigger[0].Repetition.Duration -ne "P3650D" -or
-    $updated.Principal.UserId -ne $userId -or
+    $updatedPrincipalSid -ne $userSid -or
     $updated.Principal.LogonType -ne "Interactive" -or
     $updated.Principal.RunLevel -ne "Limited" -or
     $updated.Settings.MultipleInstances -ne "IgnoreNew" -or
