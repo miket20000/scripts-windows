@@ -1,1 +1,0 @@
-notify = ["/home/miket/.codex/telegram-notify/telegram-notify.sh", "--mode", "completion"]
