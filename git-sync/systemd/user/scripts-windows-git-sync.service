@@ -1,8 +1,0 @@
-[Unit]
-Description=Safely synchronize scripts-windows through origin/main
-
-[Service]
-Type=oneshot
-WorkingDirectory=/home/miket/coding/scripts-windows
-ExecStart=/home/miket/coding/scripts-windows/git-sync/safe-git-sync.sh --repo /home/miket/coding/scripts-windows --branch main --remote origin
-TimeoutStartSec=5min
