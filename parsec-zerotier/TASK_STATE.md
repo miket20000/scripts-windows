@@ -107,16 +107,20 @@ the active VM assignment. Parsec is outside scope.
 
 ## Constraints and risks
 
-- Do not perform live ZeroTier installation, join, authorization, or Central
-  mutation without separate rollout approval.
+- Controlled live ZeroTier installation, join, authorization and Central
+  mutation are approved. Do not touch a target VM during an active student
+  lease and preserve the documented preflight/readback/rollback gates.
 - Production binary requires organization Authenticode signing.
 - Native IP Helper structure layout is confirmed on Windows 10 and 11. Exact
   production join/readback JSON and rollback behavior remain unverified because
   no enrollment was authorized.
 - The launcher intentionally has no background service. Central revoke is
   immediate; local `leave` occurs on the next launcher start.
-- Public `https://dysk.gp.edu.pl/health` and `/openapi.json` returned HTTP 404 at
-  the runtime checkpoint, so the guest API was not yet available for the pilot.
+- The guest API is now published under
+  `https://dysk.gp.edu.pl/guest/zerotier`; public readback returned `422` for an
+  empty bootstrap body and `401` for status without bearer, proving routing and
+  backend validation without issuing a code. Operator access without a token
+  returned `403`.
 - The OpenSSH token is elevated (`S-1-16-12288`), but SSH runs in Session 0
   while Explorer is in Session 1. A WPF/UAC prompt launched through SSH is not
   visible to the logged-in user; interactive UAC must be tested manually from
@@ -125,8 +129,9 @@ the active VM assignment. Parsec is outside scope.
 
 ## START HERE
 
-1. Deploy/read back the guest API and obtain an active L-WM66 assignment plus
-   one-time code; do not synthesize a code or authorize a Central member by hand.
+1. After the five VM networks/bindings are provisioned and read back, obtain an
+   active L-WM66 assignment plus one-time code; do not synthesize a code or
+   authorize a Central member by hand.
 2. Publish the updated launcher and start it manually from L-WM66 Explorer
    Session 1 to verify the unsigned pilot UAC prompt and visible WPF flow.
 3. Validate no-conflict preflight, pinned MSI hash/signature/install, join,
