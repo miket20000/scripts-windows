@@ -1,0 +1,26 @@
+<Window x:Class="Gp.ZeroTier.Connect.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GP ZeroTier Connect" Height="350" Width="560"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen">
+  <Grid Margin="28">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <TextBlock FontSize="24" FontWeight="SemiBold" Text="Przygotuj połączenie z maszyną" />
+    <StackPanel Grid.Row="1" Margin="0,24,0,0">
+      <TextBlock Text="Kod aktywacyjny" />
+      <TextBox x:Name="ActivationCode" FontFamily="Consolas" FontSize="22" MaxLength="7"
+               Margin="0,8,0,0" Padding="10" ToolTip="Format: 123-456" />
+    </StackPanel>
+    <Button x:Name="ConnectButton" Grid.Row="2" Margin="0,18,0,0" Padding="18,10"
+            HorizontalAlignment="Left" Content="Przygotuj połączenie" Click="Connect_Click" />
+    <Border Grid.Row="3" Margin="0,20,0,0" Padding="12" Background="#FFF3F4F6" CornerRadius="4">
+      <TextBlock x:Name="StatusText" Text="Wprowadź kod otrzymany po przydzieleniu maszyny."
+                 TextWrapping="Wrap" />
+    </Border>
+  </Grid>
+</Window>
