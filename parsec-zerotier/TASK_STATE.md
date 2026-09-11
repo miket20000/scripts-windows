@@ -23,7 +23,11 @@ the active VM assignment. Parsec is outside scope.
   CLI is under `Program Files (x86)` but the signed service engine is under
   `%ProgramData%\ZeroTier\One`. Publisher matching accepts the quoted X.500
   organization emitted by Authenticode while still requiring an exact
-  `ZEROTIER, INC.` organization component.
+  `ZEROTIER, INC.` organization component. Runtime commands invoke the same
+  signed service engine with its official `-q` CLI mode instead of relying on
+  fragile nested quoting through the `.bat` wrapper. Authenticode validation
+  embeds a safely quoted literal path because Windows PowerShell `-Command`
+  does not expose trailing native-process arguments through `$args`.
 - Join plus exact `1/0/0/0` flag readback, Node ID enrollment, expected guest
   IP/status, route-to-VM selection, VM ping, public best-route preservation,
   targeted rollback with public-route recovery readback, and next-start cleanup
@@ -35,10 +39,11 @@ the active VM assignment. Parsec is outside scope.
 
 ## Verification
 
-- `PASS` — cross-platform Core tests: 14/14. They cover exact, covering and
+- `PASS` — cross-platform Core tests: 15/15. They cover exact, covering and
   contained prefix collisions; unrelated/default/down/resume cases; invalid
   prefixes; bootstrap and telemetry JSON; count and byte queue bounds; quoted
-  official publisher subjects; and split CLI/service-engine discovery.
+  official publisher subjects; safe PowerShell literal quoting; and split
+  CLI/service-engine discovery.
 - `PASS` — Release WPF build on Ubuntu with .NET SDK 10 and
   `EnableWindowsTargeting=true`: zero warnings and zero errors.
 - `PASS` — self-contained single-file publish completed; the candidate consists
@@ -46,8 +51,8 @@ the active VM assignment. Parsec is outside scope.
   `7bf1630b49a92cc40adcc57f737e19b024f7dddce981555e429bdb472fae8e7f`.
   Static source scan found no embedded credentials; matches were documentation
   terms only.
-- `BLOCKED` — Windows runtime acceptance is intentionally not executed on
-  Ubuntu. Join/leave, installation, enrollment, telemetry delivery,
+- `BLOCKED` — full Windows runtime acceptance remains incomplete. Join/leave,
+  installation, enrollment, telemetry delivery,
   reachability, routing rollback, expiry cleanup, and interactive WPF/UAC still
   require the deployed backend, an active assignment/code, and the controlled
   Windows pilot.
@@ -62,7 +67,7 @@ the active VM assignment. Parsec is outside scope.
   discovery incorrectly assumed the engine was beside the CLI; after that fix,
   the second run found that the valid signer subject quotes `O="ZEROTIER, INC."`.
   Both are application `FAIL`s and remain recorded. The corresponding minimal
-  fixes pass the 14 Core tests and zero-warning WPF build.
+  fixes pass the current Core suite and zero-warning WPF build.
 - `PASS` by direct Windows readback after the signer fix — engine signature is
   `Valid`, the corrected exact organization regex matches, CLI version is
   `1.16.2`, and legacy network `743993800f834be2` remained `OK`, address
@@ -72,6 +77,22 @@ the active VM assignment. Parsec is outside scope.
   was denied before process start by organizational Device Guard. Code
   Integrity recorded events 3077 and 3033. No policy bypass was attempted;
   staging and isolated runtime state were removed.
+- Fail-latched framework-dependent MT retry used the installed, validly signed
+  Microsoft `dotnet.exe` and .NET runtime 10.0.10, without changing Device
+  Guard. The first DLL run proved that execution was allowed and passed the
+  four platform/storage tests, but found that the Authenticode subprocess saw
+  a null `$args[0]`; the next candidate passed signature validation but exposed
+  fragile `.bat`/`cmd.exe` invocation from `ProcessStartInfo`. Both application
+  `FAIL`s remain recorded and produced the minimal fixes described above.
+- `PASS` — final framework-dependent MT helper, SHA-256
+  `36d91ec0faf93db47d812ea9d6a1152891e96ecacdfb9a6a9a3e6e21366d3744`:
+  5/5 for IP Helper snapshot/best-interface readback, real-prefix conflict,
+  planned `172.30.253.0/29` no-conflict, machine-scope DPAPI and bounded
+  encrypted telemetry queue, plus read-only reuse of the existing signed
+  ZeroTier 1.16.2 engine and Node ID. ACL contained only SYSTEM and
+  Administrators with non-inherited FullControl. Cleanup removed the isolated
+  runtime state and all test staging; legacy network `743993800f834be2`
+  remained `OK` at `172.30.252.2/29` with flags `1/0/0/0`.
 
 ## Preserved runtime context
 

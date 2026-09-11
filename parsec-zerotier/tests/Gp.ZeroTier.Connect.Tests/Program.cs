@@ -16,6 +16,7 @@ var tests = new (string Name, Action Run)[]
     ("queue drops oldest by count", QueueDropsOldest),
     ("queue drops oldest by bytes", QueueDropsByBytes),
     ("quoted official publisher matches", OfficialPublisherMatches),
+    ("PowerShell literal quoting preserves apostrophes", PowerShellLiteralQuotingPreservesApostrophes),
     ("service engine discovery includes ProgramData", EngineDiscoveryIncludesDataDirectory)
 };
 
@@ -93,6 +94,12 @@ static void OfficialPublisherMatches()
     const string subject = "E=contact@zerotier.com, CN=\"ZEROTIER, INC.\", O=\"ZEROTIER, INC.\", L=Irvine, C=US";
     Assert(ZeroTierInstallationPolicy.IsExpectedPublisherSubject(subject), "quoted official organization rejected");
     Assert(!ZeroTierInstallationPolicy.IsExpectedPublisherSubject("CN=ZEROTIER, INC., O=Other"), "unrelated organization accepted");
+}
+
+static void PowerShellLiteralQuotingPreservesApostrophes()
+{
+    var value = ZeroTierInstallationPolicy.QuotePowerShellLiteral(@"C:\Users\O'Brien\ZeroTier.exe");
+    Assert(value == @"'C:\Users\O''Brien\ZeroTier.exe'", "PowerShell literal was not safely quoted");
 }
 
 static void EngineDiscoveryIncludesDataDirectory()

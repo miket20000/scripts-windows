@@ -21,9 +21,9 @@ public sealed class ZeroTierManager(LauncherOptions options)
 {
     private static readonly string DataDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ZeroTier", "One");
-    private static string CliPath => FindCliPath() ?? Path.Combine(DataDirectory, "zerotier-cli.bat");
+    private static string EnginePath => FindEnginePath() ?? Path.Combine(DataDirectory, "zerotier-one_x64.exe");
 
-    public bool IsInstalled => FindCliPath() is not null;
+    public bool IsInstalled => FindCliPath() is not null && FindEnginePath() is not null;
 
     public async Task EnsureInstalledAsync(CancellationToken cancellationToken)
     {
@@ -136,18 +136,17 @@ public sealed class ZeroTierManager(LauncherOptions options)
 
     private static async Task VerifyAuthenticodeAsync(string path, CancellationToken cancellationToken)
     {
-        var script = $"$s=Get-AuthenticodeSignature -LiteralPath $args[0]; if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch '{ZeroTierInstallationPolicy.PublisherSubjectPattern}') {{ exit 23 }}";
+        var pathLiteral = ZeroTierInstallationPolicy.QuotePowerShellLiteral(path);
+        var script = $"$s=Get-AuthenticodeSignature -LiteralPath {pathLiteral}; if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch '{ZeroTierInstallationPolicy.PublisherSubjectPattern}') {{ exit 23 }}";
         var powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
-        var result = await ProcessRunner.RunAsync(powershell, ["-NoProfile", "-NonInteractive", "-Command", script, path], TimeSpan.FromSeconds(30), cancellationToken);
+        var result = await ProcessRunner.RunAsync(powershell, ["-NoProfile", "-NonInteractive", "-Command", script], TimeSpan.FromSeconds(30), cancellationToken);
         if (result.ExitCode != 0)
             throw new LauncherException("ZT_INSTALLER_SIGNATURE_INVALID", "Podpis Authenticode instalatora ZeroTier jest nieprawidłowy lub pochodzi od innego wydawcy.");
     }
 
     private static async Task VerifyInstalledPublisherAsync(CancellationToken cancellationToken)
     {
-        var cliDirectory = Path.GetDirectoryName(CliPath) ?? "";
-        var executable = ZeroTierInstallationPolicy.GetEngineCandidates(DataDirectory, cliDirectory)
-            .FirstOrDefault(File.Exists);
+        var executable = FindEnginePath();
         if (executable is null)
             throw new LauncherException("ZT_VERSION_UNSUPPORTED", "Nie można potwierdzić oficjalnego pliku wykonywalnego istniejącej instalacji ZeroTier.");
         await VerifyAuthenticodeAsync(executable, cancellationToken);
@@ -235,9 +234,7 @@ public sealed class ZeroTierManager(LauncherOptions options)
         var values = arguments.ToArray();
         if (values.Any(value => value.Any(character => char.IsWhiteSpace(character) || "&|<>^\"".Contains(character))))
             throw new LauncherException("ZT_CLI_ARGUMENT_INVALID", "Odrzucono nieprawidłowy argument klienta ZeroTier.");
-        var comSpec = Path.Combine(Environment.SystemDirectory, "cmd.exe");
-        var commandLine = $"call \"{CliPath}\" {string.Join(' ', values)}";
-        return ProcessRunner.RunAsync(comSpec, ["/d", "/s", "/c", commandLine], TimeSpan.FromSeconds(30), cancellationToken);
+        return ProcessRunner.RunAsync(EnginePath, ["-q", .. values], TimeSpan.FromSeconds(30), cancellationToken);
     }
 
     private static void ValidateNetworkId(string networkId)
@@ -255,5 +252,12 @@ public sealed class ZeroTierManager(LauncherOptions options)
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ZeroTier", "One", "zerotier-cli.bat")
         ];
         return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string? FindEnginePath()
+    {
+        var cliDirectory = Path.GetDirectoryName(FindCliPath() ?? "") ?? "";
+        return ZeroTierInstallationPolicy.GetEngineCandidates(DataDirectory, cliDirectory)
+            .FirstOrDefault(File.Exists);
     }
 }

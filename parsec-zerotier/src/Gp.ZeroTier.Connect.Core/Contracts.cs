@@ -130,6 +130,9 @@ public static class ZeroTierInstallationPolicy
     public static bool IsExpectedPublisherSubject(string subject) =>
         Regex.IsMatch(subject, PublisherSubjectPattern, RegexOptions.CultureInvariant);
 
+    public static string QuotePowerShellLiteral(string value) =>
+        $"'{value.Replace("'", "''", StringComparison.Ordinal)}'";
+
     public static IEnumerable<string> GetEngineCandidates(string dataDirectory, string cliDirectory) =>
         new[] { dataDirectory, cliDirectory }
             .Distinct(StringComparer.OrdinalIgnoreCase)
