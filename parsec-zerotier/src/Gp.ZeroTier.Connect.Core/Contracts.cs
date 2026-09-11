@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace Gp.ZeroTier.Connect.Core;
 
@@ -120,6 +121,20 @@ public static class TelemetryQueueLimiter
         }
         return (kept, dropped);
     }
+}
+
+public static class ZeroTierInstallationPolicy
+{
+    public const string PublisherSubjectPattern = "(^|, )O=\"?ZEROTIER, INC\\.\"?(,|$)";
+
+    public static bool IsExpectedPublisherSubject(string subject) =>
+        Regex.IsMatch(subject, PublisherSubjectPattern, RegexOptions.CultureInvariant);
+
+    public static IEnumerable<string> GetEngineCandidates(string dataDirectory, string cliDirectory) =>
+        new[] { dataDirectory, cliDirectory }
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .SelectMany(directory => new[] { "zerotier-one_x64.exe", "zerotier-one.exe" }
+                .Select(name => Path.Combine(directory, name)));
 }
 
 public sealed record TelemetryConflict(

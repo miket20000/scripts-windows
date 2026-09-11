@@ -14,7 +14,9 @@ var tests = new (string Name, Action Run)[]
     ("bootstrap JSON contract", BootstrapJsonContract),
     ("telemetry omits secrets and assignment", TelemetryContract),
     ("queue drops oldest by count", QueueDropsOldest),
-    ("queue drops oldest by bytes", QueueDropsByBytes)
+    ("queue drops oldest by bytes", QueueDropsByBytes),
+    ("quoted official publisher matches", OfficialPublisherMatches),
+    ("service engine discovery includes ProgramData", EngineDiscoveryIncludesDataDirectory)
 };
 
 var failed = 0;
@@ -84,6 +86,20 @@ static void QueueDropsByBytes()
 {
     var result = TelemetryQueueLimiter.Limit(["aaaa", "bbbb", "cccc"], 10, 8, values => values.Sum(value => value.Length));
     Assert(result.Dropped == 1 && result.Items.SequenceEqual(["bbbb", "cccc"]), "wrong byte limit");
+}
+
+static void OfficialPublisherMatches()
+{
+    const string subject = "E=contact@zerotier.com, CN=\"ZEROTIER, INC.\", O=\"ZEROTIER, INC.\", L=Irvine, C=US";
+    Assert(ZeroTierInstallationPolicy.IsExpectedPublisherSubject(subject), "quoted official organization rejected");
+    Assert(!ZeroTierInstallationPolicy.IsExpectedPublisherSubject("CN=ZEROTIER, INC., O=Other"), "unrelated organization accepted");
+}
+
+static void EngineDiscoveryIncludesDataDirectory()
+{
+    var candidates = ZeroTierInstallationPolicy.GetEngineCandidates("C:/ProgramData/ZeroTier/One", "C:/Program Files (x86)/ZeroTier/One").ToArray();
+    Assert(candidates.Contains("C:/ProgramData/ZeroTier/One/zerotier-one_x64.exe"), "ProgramData engine missing");
+    Assert(candidates.Contains("C:/Program Files (x86)/ZeroTier/One/zerotier-one.exe"), "CLI directory fallback missing");
 }
 
 static void Assert(bool condition, string message)

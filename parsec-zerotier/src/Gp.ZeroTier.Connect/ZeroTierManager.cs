@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Gp.ZeroTier.Connect.Core;
 
 namespace Gp.ZeroTier.Connect;
 
@@ -135,7 +136,7 @@ public sealed class ZeroTierManager(LauncherOptions options)
 
     private static async Task VerifyAuthenticodeAsync(string path, CancellationToken cancellationToken)
     {
-        const string script = "$s=Get-AuthenticodeSignature -LiteralPath $args[0]; if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'O=ZEROTIER, INC\\.') { exit 23 }";
+        var script = $"$s=Get-AuthenticodeSignature -LiteralPath $args[0]; if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch '{ZeroTierInstallationPolicy.PublisherSubjectPattern}') {{ exit 23 }}";
         var powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
         var result = await ProcessRunner.RunAsync(powershell, ["-NoProfile", "-NonInteractive", "-Command", script, path], TimeSpan.FromSeconds(30), cancellationToken);
         if (result.ExitCode != 0)
@@ -145,8 +146,7 @@ public sealed class ZeroTierManager(LauncherOptions options)
     private static async Task VerifyInstalledPublisherAsync(CancellationToken cancellationToken)
     {
         var cliDirectory = Path.GetDirectoryName(CliPath) ?? "";
-        var executable = new[] { "zerotier-one_x64.exe", "zerotier-one.exe" }
-            .Select(name => Path.Combine(cliDirectory, name))
+        var executable = ZeroTierInstallationPolicy.GetEngineCandidates(DataDirectory, cliDirectory)
             .FirstOrDefault(File.Exists);
         if (executable is null)
             throw new LauncherException("ZT_VERSION_UNSUPPORTED", "Nie można potwierdzić oficjalnego pliku wykonywalnego istniejącej instalacji ZeroTier.");
