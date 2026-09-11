@@ -51,11 +51,17 @@ the active VM assignment. Parsec is outside scope.
   `7bf1630b49a92cc40adcc57f737e19b024f7dddce981555e429bdb472fae8e7f`.
   Static source scan found no embedded credentials; matches were documentation
   terms only.
-- `BLOCKED` — full Windows runtime acceptance remains incomplete. The backend
-  and five bindings are now deployed, but join/leave, installation, enrollment,
-  telemetry delivery, reachability, routing rollback, expiry cleanup, and
-  interactive WPF/UAC still require an active assignment/code and manual start
-  of the controlled Windows pilot from Explorer Session 1.
+- `PASS` — the first full L-WM66 runtime pilot was started manually from
+  Explorer Session 1. The operator entered the real single-use code and
+  reported `Połączenie przygotowane. Można uruchomić Parsec.` The completed
+  admin-only install/join proves elevated execution; the visible UAC prompt
+  itself was not separately attested.
+  Independent readback confirmed install, join, enrollment, telemetry,
+  reachability, and split routing. Parsec was not started by the launcher.
+- `BLOCKED` — dismissal/revoke, natural expiry, next-start local leave,
+  cleanup acknowledgement, public-route failure rollback, and the controlled
+  `ZT_NETWORK_CONFLICT` scenario remain unexecuted. Per operator instruction,
+  do not dismiss the currently assigned machine.
 - `PASS` — Windows 10 Pro `L-WM66` runtime helper, SHA-256
   `48287e7fe86573d1d9cc7fbf948b7994b87f1e00f1ea60efab43c4d5bb3ad4ef`:
   native IP Helper snapshot and best-interface readback, real-prefix conflict,
@@ -100,6 +106,16 @@ the active VM assignment. Parsec is outside scope.
   destination signature is the expected `NotSigned` test state. L-WM66 has an
   active Explorer Session 1, 137 GB free, administrative SSH access, and no
   pre-existing ZeroTier installation.
+- `PASS` — live L-WM66 enrollment to `VM-PC1`: backend state `active`, Central
+  contains exactly the VM and guest at `.1`/`.2`, and organization usage is
+  `6/10`. Windows readback found signed ZeroTier 1.16.2, `OK`, address
+  `172.30.253.2/29`, flags `1/0/0/0`, VM route over the target adapter, public
+  route over Wi-Fi, VM ping and HTTPS success. The peer has three direct paths
+  and is classified `DIRECT` (reported latency 126 ms).
+- `PASS` — production telemetry contains the expected seven successful events:
+  bootstrap, both preflights, install, join, enrollment, and connectivity.
+  State consists only of encrypted `instance.dat`/`state.dat`; directory ACL is
+  protected and contains only SYSTEM and Administrators SIDs.
 
 ## Preserved runtime context
 
@@ -119,8 +135,8 @@ the active VM assignment. Parsec is outside scope.
   lease and preserve the documented preflight/readback/rollback gates.
 - Production binary requires organization Authenticode signing.
 - Native IP Helper structure layout is confirmed on Windows 10 and 11. Exact
-  production join/readback JSON and rollback behavior remain unverified because
-  no enrollment was authorized.
+  production join/readback JSON is now verified; failure rollback and expiry
+  cleanup remain unverified.
 - The launcher intentionally has no background service. Central revoke is
   immediate; local `leave` occurs on the next launcher start.
 - The guest API is now published under
@@ -136,16 +152,15 @@ the active VM assignment. Parsec is outside scope.
 
 ## START HERE
 
-1. The five VM networks/bindings are live and the unsigned pilot is on L-WM66
-   Public Desktop. When an operator is ready at that machine, create a real
-   `VM-PC1` assignment and use its one-time code; do not synthesize a code or
-   authorize a Central member by hand.
-2. Start the published launcher manually from L-WM66 Explorer Session 1 to
-   verify the unsigned pilot UAC prompt and visible WPF flow.
-3. Validate no-conflict preflight, pinned MSI hash/signature/install, join,
-   exact flags/address, routing and telemetry, then dismissal/expiry revoke,
-   next-start local leave and failure rollback with before/after membership
-   readback.
+1. L-WM66 is actively enrolled to `VM-PC1`; do not execute dismissal. Preserve
+   the current state until the chosen expiry/cleanup test window.
+2. After natural expiry, confirm Central revoke and device count `6 -> 5`, then
+   start the launcher manually from Explorer Session 1 to verify targeted local
+   leave, encrypted-state removal, cleanup acknowledgement, Internet, and the
+   absence of changes to unrelated networks.
+3. Run public-route rollback and `ZT_NETWORK_CONFLICT` as separate controlled
+   scenarios on an unassigned VM/guest; do not synthesize codes or authorize a
+   Central member by hand.
 4. Preserve MT legacy network `743993800f834be2`; do not use it for the pilot or
    bypass Device Guard. Do not change Central or VM membership without the
    separately authorized rollout gate.
