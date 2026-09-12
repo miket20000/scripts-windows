@@ -9,11 +9,10 @@ public sealed class ProvisioningService(
     TelemetryService telemetry,
     SecureStorage storage,
     WindowsNetworkInspector networkInspector,
-    ZeroTierManager zeroTier)
+    ZeroTierManager zeroTier,
+    ParsecPortableManager parsec)
 {
-    public const string ReadyMessage = "Połączenie przygotowane. Możesz teraz uruchomić Parsec.";
-
-    public async Task<string?> CleanupExpiredStateAsync(CancellationToken cancellationToken)
+    public async Task<ProvisioningResult?> CleanupExpiredStateAsync(CancellationToken cancellationToken)
     {
         await telemetry.FlushAsync(cancellationToken);
         var state = storage.LoadState();
@@ -28,9 +27,19 @@ public sealed class ProvisioningService(
 
         var normalizedStatus = status.Status.ToLowerInvariant();
         if (normalizedStatus == "active" && state.LeaseExpiresAt > DateTimeOffset.UtcNow)
-            return (await ResumeActiveStateAsync(state, status, cancellationToken)).Message;
+            return await ResumeActiveStateAsync(state, status, cancellationToken);
         if (normalizedStatus is not ("revoked" or "expired" or "invalid")) return null;
 
+        try
+        {
+            await parsec.CleanupAsync(state.AssignmentId, cancellationToken);
+            await telemetry.TrySendAsync(state.DeviceToken, telemetry.Create("parsec_cleanup_completed", "PASS"), cancellationToken);
+        }
+        catch (LauncherException ex)
+        {
+            await telemetry.TrySendAsync(state.DeviceToken, telemetry.Create("parsec_cleanup_failed", "FAIL", ex.Code), cancellationToken);
+            throw;
+        }
         if (zeroTier.IsInstalled)
         {
             await zeroTier.EnsureInstalledAsync(cancellationToken);
@@ -40,7 +49,7 @@ public sealed class ProvisioningService(
         try { await backend.CleanupAckAsync(state.DeviceToken, state.NetworkId, cancellationToken); }
         catch when (!cancellationToken.IsCancellationRequested) { }
         storage.DeleteState();
-        return "Usunięto lokalne członkostwo zakończonego przydziału.";
+        return new("Usunięto dane Parsec i lokalne członkostwo zakończonego przydziału.", false);
     }
 
     public async Task<ProvisioningResult> ProvisionAsync(string activationCode, CancellationToken cancellationToken)
@@ -107,7 +116,7 @@ public sealed class ProvisioningService(
                 token,
                 telemetry.Create("connectivity_ready", "PASS", zeroTierVersion: version, networkStatus: ready.Status, pathType: "UNKNOWN"),
                 cancellationToken);
-            return new(ReadyMessage);
+            return await CompleteWithParsecAsync(enrollment.AssignmentId, token, cancellationToken);
         }
         catch (Exception failure)
         {
@@ -192,7 +201,7 @@ public sealed class ProvisioningService(
                 token,
                 telemetry.Create("connectivity_ready", "PASS", zeroTierVersion: version, networkStatus: ready.Status, pathType: "UNKNOWN"),
                 cancellationToken);
-            return new(ReadyMessage);
+            return await CompleteWithParsecAsync(state.AssignmentId, token, cancellationToken);
         }
         catch (Exception failure)
         {
@@ -217,6 +226,31 @@ public sealed class ProvisioningService(
             if (failure is LauncherException { Code: "ZT_PUBLIC_ROUTE_CHANGED" } && !leaveSucceeded)
                 throw new LauncherException("ZT_PUBLIC_ROUTE_RECOVERY_FAILED", "ZeroTier został odłączony, ale nie potwierdzono odzyskania wcześniejszego routingu publicznego.");
             throw;
+        }
+    }
+
+    private async Task<ProvisioningResult> CompleteWithParsecAsync(
+        string assignmentId,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await parsec.StartAsync(assignmentId, cancellationToken);
+            await telemetry.TrySendAsync(token, telemetry.Create("parsec_launch_completed", "PASS"), cancellationToken);
+            return new("Połączenie przygotowane. Uruchomiono Parsec.", true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var code = ex is LauncherException launcherException ? launcherException.Code : "PARSEC_LAUNCH_FAILED";
+            await telemetry.TrySendAsync(token, telemetry.Create("parsec_launch_failed", "FAIL", code), cancellationToken);
+            return new(
+                $"Połączenie przygotowane, ale nie udało się uruchomić Parsec ({code}). Uruchom aplikację ponownie, aby spróbować ponownie.",
+                true);
         }
     }
 

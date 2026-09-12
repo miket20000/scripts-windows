@@ -20,4 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="../Gp.ZeroTier.Connect.Core/Gp.ZeroTier.Connect.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/codinggiants-parsec-150-104a.zip" LogicalName="Gp.ZeroTier.Connect.Assets.codinggiants-parsec-150-104a.zip" />
+  </ItemGroup>
 </Project>

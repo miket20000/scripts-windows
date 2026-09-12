@@ -4,7 +4,8 @@
 
 Deliver a Windows 10/11 x64 launcher that uses a one-time `vm-manager` code to
 install or reuse the pinned ZeroTier client and join only the network bound to
-the active VM assignment. Parsec is outside scope.
+the active VM assignment, then validate, extract and automatically start the
+bundled Parsec Portable client for that assignment.
 
 ## Current implementation
 
@@ -44,9 +45,52 @@ the active VM assignment. Parsec is outside scope.
 - State and the offline telemetry queue use machine-scope DPAPI and a SYSTEM /
   Administrators-only ACL. Telemetry excludes credentials and broad host/network
   inventory.
+- Parsec Portable `150-104a` is embedded as a 3,419,147-byte ZIP with SHA-256
+  `ac7483a8a0021c79492671f06966a52ba2527fcc17a2ddff5fcc148d91b07b55`.
+  Extraction is fail-closed against traversal, duplicates, unexpected entries,
+  missing files, more than 20 entries or more than 16 MiB expanded data.
+- The runtime is isolated per `asg_<32 lowercase hex>` assignment under the
+  protected state tree. Before every start, the launcher validates the four
+  pinned PE hashes, the appdata/DLL binding, the managed guest profile including
+  `app_host=false`, and each file's exact packaged Authenticode publisher:
+  `Unity Technologies SF` for the runtime/service and `Parsec Cloud, Inc.` for
+  the VUSB helper.
+- Both fresh provisioning and active-token resume start Parsec only after VM
+  connectivity and public-route preservation have passed. Parsec launch failure
+  is reported separately and does not roll back a verified ZeroTier connection.
+  Expired/revoked/invalid cleanup stops only an exact-path `parsecd.exe` and
+  removes only that assignment directory before leaving the saved GP network.
+- Parsec authentication remains interactive. No Parsec credential is accepted,
+  persisted or sent by the launcher.
 
 ## Verification
 
+- `PASS` — final cross-platform Core suite: 24/24. Six new cases cover safe
+  assignment IDs, archive-root normalization, traversal rejection, the hard
+  guest profile, appdata/DLL binding and exact Parsec publisher matching.
+- `PASS` — final Release WPF build on Ubuntu with .NET SDK 10 and
+  `EnableWindowsTargeting=true`: zero warnings and zero errors.
+- `PASS` — final self-contained single-file publish produced exactly
+  `GP-ZeroTier-Connect.exe`, 143,301,375 bytes, SHA-256
+  `8797d826e951fcfbce881c5cf78c380ff2f81e57d07d95f7c03e2b922fe1cf1b`.
+  Static readback found the exact embedded resource name. `unzip -t` passed all
+  ten archive entries and the repository ZIP hash matches the pinned policy.
+- `PASS` — all four packaged PE files have non-empty certificate tables. Static
+  PKCS#7 certificate extraction found `Unity Technologies SF` on the runtime,
+  DLL and service helper, and `Parsec Cloud, Inc.` on the VUSB helper. Windows
+  trust-chain/AuthentiCode status remains part of the runtime acceptance gate.
+- `FAIL` (development, preserved) — the first Core compilation used the wrong
+  `StartsWith` overload; the first full WPF build then exposed an illegal
+  `yield` inside `try/catch`. Both defects were corrected, and the final test,
+  build and publish results above are from the corrected candidate.
+- `FAIL` (tooling, preserved) — the first packaging command targeted a
+  pre-created empty `.zip`, which `zip` rejected as an invalid existing archive.
+  Packaging was repeated in a fresh temporary directory and the final archive
+  passed hash, entry-list and decompression readback.
+- `BLOCKED` — Linux cannot validate Windows Authenticode status, actual portable
+  extraction/ACL inheritance, GUI visibility, behavior under the launcher's
+  elevated token, exact-path process cleanup, or natural expiry cleanup. No
+  Windows runtime rollout was authorized or performed in this stage.
 - `PASS` — cross-platform Core tests: 18/18. They cover exact, covering and
   contained prefix collisions; unrelated/default/down/resume cases; invalid
   prefixes; own `/32` routes during resume; rejection of a broader own-interface
@@ -189,9 +233,9 @@ the active VM assignment. Parsec is outside scope.
   route existed, but tested public flows retained their physical interface.
 - iPhone hotspot tests could fall back to RELAY with materially increased
   latency. Connectivity success does not establish acceptable Parsec quality.
-- The earlier architecture document is retained as historical context; its
-  Parsec-launching scope is superseded by the current requirement that Parsec
-  remain outside this application.
+- The earlier architecture document is retained as historical context. Its
+  Parsec-out-of-scope decision is superseded by the embedded portable launch
+  implementation described above.
 
 ## Constraints and risks
 
@@ -204,6 +248,14 @@ the active VM assignment. Parsec is outside scope.
   resume, natural expiry and next-start cleanup are verified.
 - The launcher intentionally has no background service. Central revoke is
   immediate; local `leave` occurs on the next launcher start.
+- The WPF launcher still uses `requireAdministrator`; therefore directly started
+  Parsec inherits an elevated token. This stage does not split privileged and
+  interactive components. Windows acceptance must confirm that the UI appears
+  in the intended Explorer session and that this execution model is acceptable.
+- Portable login state is assignment-scoped and deleted during normal next-start
+  expiry/revocation cleanup. If the launcher is never reopened after expiry,
+  local Parsec files remain until the next cleanup run; Central revocation still
+  ends VM network access immediately.
 - The guest API is now published under
   `https://dysk.gp.edu.pl/guest/zerotier`; public readback returned `422` for an
   empty bootstrap body and `401` for status without bearer, proving routing and
@@ -217,19 +269,20 @@ the active VM assignment. Parsec is outside scope.
 
 ## START HERE
 
-1. Both real pilot leases expired naturally and Central returned to the five-VM
-   baseline. MT local cleanup is complete. L-WM66 may still retain an
-   `ACCESS_DENIED` local membership until its next manual launcher start; do not
-   use dismissal to force cleanup.
-2. `ZT_NETWORK_CONFLICT` and non-winning public-route competition are complete
-   on MT. Verify the VM-PC2 lease reaches
-   natural `expired` state after `2026-09-12T08:18:13.755468Z`, without
-   dismissal. VM-PC3 remains legitimately enrolled until natural expiry
-   `2026-09-12T08:51:16.086233Z`; verify revoke and next-start local leave
-   without dismissal. Do not synthesize codes or authorize a Central member by
-   hand.
-3. The unsigned self-contained EXE remains blocked by MT Device Guard. Do not
-   bypass policy; production distribution requires organization Authenticode.
-4. Do not change Central or VM membership without the separately authorized
-   rollout gate. The MT clean-install test intentionally removed its former
-   legacy local membership; the legacy Central network itself remains retained.
+1. The embedded-Parsec candidate is built but not deployed. Before distribution,
+   run a separately authorized isolated Windows assignment and read back: archive
+   extraction and ACLs, all four Authenticode signatures, visible Parsec UI,
+   active-resume idempotence, no ZeroTier rollback on forced Parsec launch
+   failure, and exact-path Parsec removal on natural expiry/next start.
+2. Explicitly decide whether running Parsec with the launcher's inherited
+   elevated token is acceptable. If not, split the privileged ZeroTier operation
+   from the interactive Parsec launch in a separate scoped change.
+3. The production EXE still requires organization Authenticode signing. The
+   unsigned self-contained EXE remains blocked by MT Device Guard; do not bypass
+   that policy.
+4. Keep Parsec login interactive unless a separately reviewed supported vendor
+   authentication mechanism is selected. Do not inject credentials into CLI
+   arguments, config files, telemetry or logs.
+5. Do not change Central or VM membership without the separately authorized
+   rollout gate. Preserve the five-VM baseline and historical fail-latched
+   evidence.

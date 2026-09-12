@@ -16,7 +16,8 @@ public partial class MainWindow : Window
         var backend = new BackendClient(new HttpClient { BaseAddress = options.BackendBaseUri, Timeout = TimeSpan.FromSeconds(20) });
         var storage = new SecureStorage(options.StateDirectory);
         var telemetry = new TelemetryService(backend, storage);
-        provisioning = new ProvisioningService(backend, telemetry, storage, new WindowsNetworkInspector(), new ZeroTierManager(options));
+        provisioning = new ProvisioningService(backend, telemetry, storage, new WindowsNetworkInspector(),
+            new ZeroTierManager(options), new ParsecPortableManager(options));
         Loaded += async (_, _) => await CleanupPreviousLeaseAsync();
     }
 
@@ -26,16 +27,16 @@ public partial class MainWindow : Window
         StatusText.Text = "Sprawdzanie poprzedniego połączenia…";
         try
         {
-            var message = await provisioning.CleanupExpiredStateAsync(CancellationToken.None);
-            if (message is null)
+            var result = await provisioning.CleanupExpiredStateAsync(CancellationToken.None);
+            if (result is null)
             {
                 StatusText.Text = "Wprowadź kod otrzymany po przydzieleniu maszyny.";
                 SetConnectionControlsEnabled(true);
             }
             else
             {
-                StatusText.Text = message;
-                SetConnectionControlsEnabled(message != ProvisioningService.ReadyMessage);
+                StatusText.Text = result.Message;
+                SetConnectionControlsEnabled(!result.HasActiveLease);
             }
         }
         catch (LauncherException ex)
@@ -66,7 +67,7 @@ public partial class MainWindow : Window
         {
             var result = await provisioning.ProvisionAsync(code, CancellationToken.None);
             StatusText.Text = result.Message;
-            ready = result.Message == ProvisioningService.ReadyMessage;
+            ready = result.HasActiveLease;
         }
         catch (LauncherException ex)
         {

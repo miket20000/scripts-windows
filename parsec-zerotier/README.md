@@ -1,8 +1,9 @@
 # GP ZeroTier Connect
 
 Windows 10/11 x64 WPF launcher that prepares a single ZeroTier connection for
-the VM lease returned by `vm-manager`. It deliberately does not install, start,
-or configure Parsec.
+the VM lease returned by `vm-manager`, extracts the bundled Parsec Portable
+client into an assignment-specific protected directory and starts it after
+ZeroTier connectivity is confirmed.
 
 ## Safety properties
 
@@ -39,6 +40,21 @@ or configure Parsec.
 The API base is pinned to `https://dysk.gp.edu.pl/`; an unprivileged environment
 variable cannot redirect activation codes or tokens to another server.
 
+## Parsec Portable
+
+The single-file launcher embeds `codinggiants-parsec-150-104a.zip` (SHA-256
+`ac7483a8a0021c79492671f06966a52ba2527fcc17a2ddff5fcc148d91b07b55`).
+Before each launch it validates the pinned PE hashes, the `appdata.json` DLL
+binding, the student profile including `app_host=false`, and valid Authenticode
+signatures from the exact packaged publishers (`Unity Technologies SF` for the
+main runtime/service and `Parsec Cloud, Inc.` for the VUSB helper). Extraction rejects unexpected
+files, traversal paths, duplicate entries and oversized archives. Runtime files
+are isolated under `%ProgramData%\GP\ZeroTierConnect\ParsecPortable\<assignment_id>`
+and are removed, after stopping only the matching executable, during normal
+expired/revoked lease cleanup. A Parsec launch failure does not roll back a
+successfully verified ZeroTier connection. Login remains interactive; the
+launcher does not store or submit Parsec credentials.
+
 ## Build and test
 
 Requires .NET SDK 10. On Ubuntu, Windows targeting downloads the WindowsDesktop
@@ -73,6 +89,8 @@ not contain it. See `Core/Contracts.cs` for the exact JSON names.
 ## Required Windows acceptance
 
 The Linux build cannot validate DPAPI, ACL application, IP Helper ABI, MSI/UAC,
-ZeroTier CLI output, routing, or rollback. Before distribution, execute those
-checks on an isolated Windows guest with an expendable test assignment. Never
-perform acceptance against an unrelated existing ZeroTier membership.
+ZeroTier CLI output, routing, rollback, Parsec Authenticode readback, portable
+extraction, GUI startup, exact-path process cleanup, or user-session behavior.
+Before distribution, execute those checks on an isolated Windows guest with an
+expendable test assignment. Never perform acceptance against an unrelated
+existing ZeroTier membership.

@@ -20,7 +20,13 @@ var tests = new (string Name, Action Run)[]
     ("queue drops oldest by bytes", QueueDropsByBytes),
     ("quoted official publisher matches", OfficialPublisherMatches),
     ("PowerShell literal quoting preserves apostrophes", PowerShellLiteralQuotingPreservesApostrophes),
-    ("service engine discovery includes ProgramData", EngineDiscoveryIncludesDataDirectory)
+    ("service engine discovery includes ProgramData", EngineDiscoveryIncludesDataDirectory),
+    ("Parsec assignment id is path-safe", ParsecAssignmentIdIsPathSafe),
+    ("Parsec archive path is normalized", ParsecArchivePathIsNormalized),
+    ("Parsec archive traversal is rejected", ParsecArchiveTraversalIsRejected),
+    ("Parsec guest profile is enforced", ParsecGuestProfileIsEnforced),
+    ("Parsec appdata binds expected DLL", ParsecAppDataBindsExpectedDll),
+    ("Parsec official publisher matches", ParsecOfficialPublisherMatches)
 };
 
 var failed = 0;
@@ -141,6 +147,64 @@ static void EngineDiscoveryIncludesDataDirectory()
     var candidates = ZeroTierInstallationPolicy.GetEngineCandidates("C:/ProgramData/ZeroTier/One", "C:/Program Files (x86)/ZeroTier/One").ToArray();
     Assert(candidates.Contains("C:/ProgramData/ZeroTier/One/zerotier-one_x64.exe"), "ProgramData engine missing");
     Assert(candidates.Contains("C:/Program Files (x86)/ZeroTier/One/zerotier-one.exe"), "CLI directory fallback missing");
+}
+
+static void ParsecAssignmentIdIsPathSafe()
+{
+    Assert(ParsecPortablePolicy.IsValidAssignmentId("asg_0123456789abcdef0123456789abcdef"), "valid assignment rejected");
+    Assert(!ParsecPortablePolicy.IsValidAssignmentId("../assignment"), "traversal assignment accepted");
+    Assert(!ParsecPortablePolicy.IsValidAssignmentId("asg_0123"), "short assignment accepted");
+}
+
+static void ParsecArchivePathIsNormalized()
+{
+    Assert(ParsecPortablePolicy.GetArchiveRelativePath("codinggiants-parsec/service/pservice.exe") == "service/pservice.exe", "wrong relative path");
+    Assert(ParsecPortablePolicy.GetArchiveRelativePath("codinggiants-parsec/") == "", "package root was not accepted");
+}
+
+static void ParsecArchiveTraversalIsRejected()
+{
+    foreach (var value in new[]
+    {
+        "codinggiants-parsec/../outside.exe",
+        "other/parsecd.exe",
+        "C:/codinggiants-parsec/parsecd.exe",
+        "/codinggiants-parsec/parsecd.exe"
+    })
+    {
+        try { _ = ParsecPortablePolicy.GetArchiveRelativePath(value); }
+        catch (FormatException) { continue; }
+        throw new Exception($"unsafe archive path accepted: {value}");
+    }
+}
+
+static void ParsecGuestProfileIsEnforced()
+{
+    const string valid = """
+        ["documentation",{"app_flags":{"value":1},"app_host":{"value":false},"app_run_level":{"value":1},"client_automatic_displays":{"value":false},"client_decoder_10bit":{"value":false},"client_decoder_444":{"value":false},"client_decoder_h265":{"value":1},"client_immersive":{"value":1},"client_overlay":{"value":1},"client_overlay_warnings":{"value":1},"client_renderer":{"value":3},"client_windowed":{"value":true},"decoder_software":{"value":0},"network_raw_audio":{"value":0}}]
+        """;
+    Assert(ParsecPortablePolicy.HasExpectedGuestConfig(valid), "valid guest profile rejected");
+    Assert(!ParsecPortablePolicy.HasExpectedGuestConfig(valid.Replace("\"app_host\":{\"value\":false}", "\"app_host\":{\"value\":true}", StringComparison.Ordinal)), "host-enabled profile accepted");
+    Assert(!ParsecPortablePolicy.HasExpectedGuestConfig("{}"), "invalid config accepted");
+}
+
+static void ParsecAppDataBindsExpectedDll()
+{
+    var hash = ParsecPortablePolicy.BinarySha256[$"parsecd-{ParsecPortablePolicy.Version}.dll"];
+    var valid = $$"""
+        {"entry_symbol":"wx_main","hash":"{{hash}}","so_name":"parsecd-{{ParsecPortablePolicy.Version}}.dll"}
+        """;
+    Assert(ParsecPortablePolicy.HasExpectedAppData(valid, hash), "valid appdata rejected");
+    Assert(!ParsecPortablePolicy.HasExpectedAppData(valid, new string('0', 64)), "wrong DLL hash accepted");
+}
+
+static void ParsecOfficialPublisherMatches()
+{
+    Assert(ParsecPortablePolicy.IsExpectedPublisherSubject("parsecd.exe", "CN=Parsec, O=Unity Technologies SF, C=US"), "official runtime organization rejected");
+    Assert(ParsecPortablePolicy.IsExpectedPublisherSubject("service/pservice.exe", "CN=Parsec, O=\"Unity Technologies SF\", C=US"), "quoted service organization rejected");
+    Assert(ParsecPortablePolicy.IsExpectedPublisherSubject("vusb/parsec-vud.exe", "CN=Parsec, O=\"Parsec Cloud, Inc.\", C=US"), "official VUSB organization rejected");
+    Assert(!ParsecPortablePolicy.IsExpectedPublisherSubject("parsecd.exe", "CN=Parsec, O=Parsec Cloud, Inc., C=US"), "wrong per-file organization accepted");
+    Assert(!ParsecPortablePolicy.IsExpectedPublisherSubject("unknown.exe", "CN=Parsec, O=Unity Technologies SF, C=US"), "unknown binary accepted");
 }
 
 static void Assert(bool condition, string message)
