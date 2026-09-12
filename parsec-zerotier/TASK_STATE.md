@@ -78,8 +78,21 @@ the active VM assignment. Parsec is outside scope.
   one owned route and test process, with no GP membership/state/address and
   unchanged public routing/HTTPS. Evidence is in the devbox provisioning module
   at `evidence/mt-network-conflict-20260912T065023Z.json`.
+- `PASS` — controlled MT public-route competition used a valid `VM-PC3`
+  enrollment and read back `allowManaged/allowDefault/allowGlobal/allowDNS`
+  as `1/0/0/0`. The real ZeroTier adapter exposed a non-winning default route
+  with effective metric `10034`, while Wi-Fi remained `45`. A guarded
+  `9999 -> 9000` metric perturbation kept all 40 public samples on Wi-Fi,
+  preserved HTTPS `200`, and kept only VM `.17` on ZeroTier. Main cleanup and
+  an independent restore returned the metric to `9999`; no test route or
+  safety route remained. Application telemetry contains seven expected `PASS`
+  events and no `public_route_changed`. Evidence is in the devbox module at
+  `evidence/mt-public-route-20260912T072733Z.json`.
 - `BLOCKED` — dismissal remains intentionally unexecuted, as required by the
-  operator. Public-route failure rollback remains unexecuted.
+  operator. The destructive branch in which ZeroTier actually becomes the
+  effective public route remains intentionally unexecuted because this test's
+  acceptance contract classifies any such takeover as `FAIL`; the non-winning
+  competition and automatic test-route restore are verified.
 - `PASS` — Windows 10 Pro `L-WM66` runtime helper, SHA-256
   `48287e7fe86573d1d9cc7fbf948b7994b87f1e00f1ea60efab43c4d5bb3ad4ef`:
   native IP Helper snapshot and best-interface readback, real-prefix conflict,
@@ -208,10 +221,13 @@ the active VM assignment. Parsec is outside scope.
    baseline. MT local cleanup is complete. L-WM66 may still retain an
    `ACCESS_DENIED` local membership until its next manual launcher start; do not
    use dismissal to force cleanup.
-2. `ZT_NETWORK_CONFLICT` is complete on MT. Verify its VM-PC2 lease reaches
+2. `ZT_NETWORK_CONFLICT` and non-winning public-route competition are complete
+   on MT. Verify the VM-PC2 lease reaches
    natural `expired` state after `2026-09-12T08:18:13.755468Z`, without
-   dismissal. Public-route rollback remains a separate controlled scenario; do
-   not synthesize codes or authorize a Central member by hand.
+   dismissal. VM-PC3 remains legitimately enrolled until natural expiry
+   `2026-09-12T08:51:16.086233Z`; verify revoke and next-start local leave
+   without dismissal. Do not synthesize codes or authorize a Central member by
+   hand.
 3. The unsigned self-contained EXE remains blocked by MT Device Guard. Do not
    bypass policy; production distribution requires organization Authenticode.
 4. Do not change Central or VM membership without the separately authorized
