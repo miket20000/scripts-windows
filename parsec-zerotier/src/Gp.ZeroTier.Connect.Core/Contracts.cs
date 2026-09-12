@@ -24,7 +24,12 @@ public sealed record EnrollResponse(
 
 public sealed record LeaseStatusResponse(
     [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("assignment_id")] string AssignmentId);
+    [property: JsonPropertyName("assignment_id")] string AssignmentId,
+    [property: JsonPropertyName("lease_expires_at")] DateTimeOffset? LeaseExpiresAt = null,
+    [property: JsonPropertyName("network_id")] string? NetworkId = null,
+    [property: JsonPropertyName("assigned_prefix")] string? AssignedPrefix = null,
+    [property: JsonPropertyName("vm_ip")] string? VmIp = null,
+    [property: JsonPropertyName("guest_ip")] string? GuestIp = null);
 
 public sealed record CleanupAckRequest(
     [property: JsonPropertyName("network_id")] string NetworkId,
@@ -34,7 +39,10 @@ public sealed record ClientState(
     string AssignmentId,
     string NetworkId,
     string DeviceToken,
-    DateTimeOffset LeaseExpiresAt);
+    DateTimeOffset LeaseExpiresAt,
+    string? AssignedPrefix = null,
+    string? VmIp = null,
+    string? GuestIp = null);
 
 public sealed record Ipv4Prefix(uint Network, int PrefixLength)
 {
@@ -58,6 +66,9 @@ public sealed record Ipv4Prefix(uint Network, int PrefixLength)
         var mask = commonLength == 0 ? 0U : uint.MaxValue << (32 - commonLength);
         return (Network & mask) == (other.Network & mask);
     }
+
+    public bool Contains(Ipv4Prefix other) =>
+        PrefixLength <= other.PrefixLength && Overlaps(other);
 
     public bool IsDefault => PrefixLength == 0;
 
@@ -94,7 +105,7 @@ public static class NetworkConflictDetector
                 continue;
             if (resumableNetworkId is not null &&
                 string.Equals(item.NetworkId, resumableNetworkId, StringComparison.OrdinalIgnoreCase) &&
-                item.Prefix == assigned)
+                assigned.Contains(item.Prefix))
                 continue;
             if (assigned.Overlaps(item.Prefix))
                 return new(assigned.ToString(), item.Prefix.ToString(), item.Kind, item.InterfaceName);

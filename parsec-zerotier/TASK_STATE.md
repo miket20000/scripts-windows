@@ -33,22 +33,32 @@ the active VM assignment. Parsec is outside scope.
   targeted rollback with public-route recovery readback, and next-start cleanup
   are implemented. Once enrollment succeeds, its encrypted state is retained
   after a local failure rollback so Central access can still be reconciled.
+- VM route and ping readiness are retried for a bounded 45-second window after
+  authorization. An active saved device token now retrieves the exact binding
+  from `/guest/zerotier/status` and resumes the same assignment without another
+  code or Central authorization. Resume ignores only exact-interface prefixes
+  contained in the assigned `/29`; a broader route remains a conflict.
+- Successful provisioning or resume leaves the ready message visible and
+  disables code entry. Expired/revoked cleanup removes only the saved GP
+  Network ID and state, then leaves the controls available for a future lease.
 - State and the offline telemetry queue use machine-scope DPAPI and a SYSTEM /
   Administrators-only ACL. Telemetry excludes credentials and broad host/network
   inventory.
 
 ## Verification
 
-- `PASS` — cross-platform Core tests: 15/15. They cover exact, covering and
+- `PASS` — cross-platform Core tests: 18/18. They cover exact, covering and
   contained prefix collisions; unrelated/default/down/resume cases; invalid
-  prefixes; bootstrap and telemetry JSON; count and byte queue bounds; quoted
+  prefixes; own `/32` routes during resume; rejection of a broader own-interface
+  route; bootstrap/status/telemetry JSON; count and byte queue bounds; quoted
   official publisher subjects; safe PowerShell literal quoting; and split
   CLI/service-engine discovery.
 - `PASS` — Release WPF build on Ubuntu with .NET SDK 10 and
   `EnableWindowsTargeting=true`: zero warnings and zero errors.
-- `PASS` — self-contained single-file publish completed; the candidate consists
-  of `GP-ZeroTier-Connect.exe` only, SHA-256
-  `7bf1630b49a92cc40adcc57f737e19b024f7dddce981555e429bdb472fae8e7f`.
+- `PASS` — final self-contained single-file publish completed after the
+  resume/readiness/UI corrections; the candidate consists of
+  `GP-ZeroTier-Connect.exe` only, SHA-256
+  `4615c9d528d85f588a159f729afdfb5a62405b03d7edd9a4be274543f883c834`.
   Static source scan found no embedded credentials; matches were documentation
   terms only.
 - `PASS` — the first full L-WM66 runtime pilot was started manually from
@@ -58,10 +68,9 @@ the active VM assignment. Parsec is outside scope.
   itself was not separately attested.
   Independent readback confirmed install, join, enrollment, telemetry,
   reachability, and split routing. Parsec was not started by the launcher.
-- `BLOCKED` — dismissal/revoke, natural expiry, next-start local leave,
-  cleanup acknowledgement, public-route failure rollback, and the controlled
-  `ZT_NETWORK_CONFLICT` scenario remain unexecuted. Per operator instruction,
-  do not dismiss the currently assigned machine.
+- `BLOCKED` — dismissal remains intentionally unexecuted, as required by the
+  operator. Public-route failure rollback and the controlled
+  `ZT_NETWORK_CONFLICT` scenario remain unexecuted.
 - `PASS` — Windows 10 Pro `L-WM66` runtime helper, SHA-256
   `48287e7fe86573d1d9cc7fbf948b7994b87f1e00f1ea60efab43c4d5bb3ad4ef`:
   native IP Helper snapshot and best-interface readback, real-prefix conflict,
@@ -116,6 +125,40 @@ the active VM assignment. Parsec is outside scope.
   bootstrap, both preflights, install, join, enrollment, and connectivity.
   State consists only of encrypted `instance.dat`/`state.dat`; directory ACL is
   protected and contains only SYSTEM and Administrators SIDs.
+- `PASS` — clean-install E2E on `MT` for `VM-PC2`: the previous official
+  ZeroTier installation, service, ProgramData, residual Program Files tree and
+  adapter were removed and independently read back as absent while Wi-Fi and
+  HTTPS remained healthy. The launcher installed signed ZeroTier 1.16.2,
+  enrolled Node `cb8f448c7f` at `172.30.253.10/29`, selected the target adapter
+  for `172.30.253.9`, retained public routes on Wi-Fi and reached the VM 4/4.
+  Parsec was not started.
+- `FAIL` (tooling, preserved) — after the MSI uninstall, two bounded helper
+  attempts could not delete the exact residual Program Files directory because
+  its ACL granted FullControl only to SYSTEM. A targeted ownership/ACL repair
+  removed that verified residual tree; independent pre-launch readback then
+  confirmed complete product/service/data/files/adapter absence.
+- `FAIL` (preserved) — the first MT enrollment completed Central authorization
+  but a single immediate VM ping failed, producing `ZT_CONNECTIVITY_FAILED` and
+  a confirmed local rollback. After the bounded readiness retry and active-token
+  resume fix, the same assignment completed with `connectivity_ready=PASS`; no
+  second code, enrollment or authorization was created.
+- `FAIL` (preserved) — while active resume was still running, the code controls
+  remained briefly enabled; a manual submission raced resume and displayed
+  `ZT_ACTIVE_LEASE_EXISTS` after connectivity had already succeeded. Startup
+  now disables both controls before the first await and re-enables them only
+  after confirming there is no active/unverified saved lease or after completed
+  expiry cleanup.
+- `PASS` — natural expiry ended the MT lease as `expired`; reconcile confirmed
+  Central revoke. The next final-launcher start displayed the cleanup message,
+  sent `cleanup_completed=PASS`, obtained backend cleanup acknowledgement,
+  removed encrypted state, address and all ZeroTier routes, and preserved the
+  signed 1.16.2 installation, protected ACL, Wi-Fi public route and HTTPS 200.
+- `FAIL` (tooling, preserved) — the final PowerShell evidence helper parsed
+  multiline `listnetworks` output as two pipeline objects and reported an
+  incorrect `networkCount=2`. Direct application/backend readback is decisive:
+  `LeaveAsync` confirmed absence before telemetry, address and routes are absent,
+  state is absent, cleanup acknowledgement is true, and Central topology is the
+  five-VM baseline.
 
 ## Preserved runtime context
 
@@ -135,8 +178,8 @@ the active VM assignment. Parsec is outside scope.
   lease and preserve the documented preflight/readback/rollback gates.
 - Production binary requires organization Authenticode signing.
 - Native IP Helper structure layout is confirmed on Windows 10 and 11. Exact
-  production join/readback JSON is now verified; failure rollback and expiry
-  cleanup remain unverified.
+  production join/readback JSON, enrollment-failure rollback, active-token
+  resume, natural expiry and next-start cleanup are verified.
 - The launcher intentionally has no background service. Central revoke is
   immediate; local `leave` occurs on the next launcher start.
 - The guest API is now published under
@@ -152,15 +195,15 @@ the active VM assignment. Parsec is outside scope.
 
 ## START HERE
 
-1. L-WM66 is actively enrolled to `VM-PC1`; do not execute dismissal. Preserve
-   the current state until the chosen expiry/cleanup test window.
-2. After natural expiry, confirm Central revoke and device count `6 -> 5`, then
-   start the launcher manually from Explorer Session 1 to verify targeted local
-   leave, encrypted-state removal, cleanup acknowledgement, Internet, and the
-   absence of changes to unrelated networks.
-3. Run public-route rollback and `ZT_NETWORK_CONFLICT` as separate controlled
+1. Both real pilot leases expired naturally and Central returned to the five-VM
+   baseline. MT local cleanup is complete. L-WM66 may still retain an
+   `ACCESS_DENIED` local membership until its next manual launcher start; do not
+   use dismissal to force cleanup.
+2. Run public-route rollback and `ZT_NETWORK_CONFLICT` as separate controlled
    scenarios on an unassigned VM/guest; do not synthesize codes or authorize a
    Central member by hand.
-4. Preserve MT legacy network `743993800f834be2`; do not use it for the pilot or
-   bypass Device Guard. Do not change Central or VM membership without the
-   separately authorized rollout gate.
+3. The unsigned self-contained EXE remains blocked by MT Device Guard. Do not
+   bypass policy; production distribution requires organization Authenticode.
+4. Do not change Central or VM membership without the separately authorized
+   rollout gate. The MT clean-install test intentionally removed its former
+   legacy local membership; the legacy Central network itself remains retained.

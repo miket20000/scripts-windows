@@ -19,8 +19,16 @@ or configure Parsec.
   `allowManaged=1`, `allowDefault=0`, `allowGlobal=0`, `allowDNS=0`, and reads
   membership back.
 - Confirms that the best Windows routes to two public probes did not move to
-  ZeroTier and that the VM route selects the enrolled ZeroTier interface. A
-  failure triggers `leave` of only the newly joined network.
+  ZeroTier and that the VM route selects the enrolled ZeroTier interface. VM
+  reachability is retried for a bounded 45-second window after authorization;
+  a failure triggers `leave` of only the newly joined network.
+- On a later start, an active device token retrieves the exact binding from
+  `vm-manager` and safely resumes the same assignment without another code or
+  enrollment. Only routes inside the assigned prefix on that exact saved
+  ZeroTier interface are excluded from conflict detection; broader routes still
+  block. A successful resume disables the code field and connect button.
+  Controls are disabled for the entire startup status/resume check, preventing
+  a second code submission from racing an active saved lease.
 - Stores the lease token and bounded telemetry queue with machine-scope DPAPI
   under `%ProgramData%\GP\ZeroTierConnect`; directory ACL permits only SYSTEM
   and local Administrators.
@@ -53,7 +61,9 @@ The client uses:
 
 - `POST /guest/zerotier/bootstrap` with `{ "activation_code": "123-456" }`;
 - `POST /guest/zerotier/enroll` with bearer bootstrap token and Node ID;
-- `GET /guest/zerotier/status` with bearer device token;
+- `GET /guest/zerotier/status` with bearer device token; an active response
+  includes the exact Network ID, assigned prefix and VM/guest addresses needed
+  for safe retry of the same assignment;
 - `POST /guest/zerotier/cleanup-ack` after confirmed local `leave`;
 - `POST /guest/zerotier/telemetry` with the applicable bearer token.
 

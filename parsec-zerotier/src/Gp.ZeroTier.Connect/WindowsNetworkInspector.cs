@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Gp.ZeroTier.Connect.Core;
 
 namespace Gp.ZeroTier.Connect;
@@ -12,6 +13,7 @@ public sealed record NetworkSnapshot(IReadOnlyList<NetworkObservation> Observati
 public sealed class WindowsNetworkInspector
 {
     private static readonly string[] PublicProbeAddresses = ["1.1.1.1", "8.8.8.8"];
+    private static readonly Regex NetworkIdPattern = new("(?<![0-9a-f])[0-9a-f]{16}(?![0-9a-f])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     public NetworkSnapshot Capture()
     {
@@ -22,7 +24,9 @@ public sealed class WindowsNetworkInspector
                 .Where(item => item.OperationalStatus == OperationalStatus.Up)
                 .Select(item => (Item: item, Props: TryGetIpv4Properties(item)))
                 .Where(item => item.Props is not null)
-                .ToDictionary(item => (uint)item.Props!.Index, item => DisplayName(item.Item));
+                .ToDictionary(
+                    item => (uint)item.Props!.Index,
+                    item => (Name: DisplayName(item.Item), NetworkId: TryExtractNetworkId(item.Item)));
 
             var observations = new List<NetworkObservation>();
             foreach (var adapter in interfaces.Where(item => item.OperationalStatus == OperationalStatus.Up))
@@ -33,7 +37,7 @@ public sealed class WindowsNetworkInspector
                     if (IPAddress.IsLoopback(address.Address) || IsMulticast(address.Address)) continue;
                     observations.Add(new NetworkObservation(
                         Ipv4Prefix.Parse($"{address.Address}/{address.PrefixLength}"),
-                        "local_address", DisplayName(adapter), true));
+                        "local_address", DisplayName(adapter), true, TryExtractNetworkId(adapter)));
                 }
             }
 
@@ -75,7 +79,14 @@ public sealed class WindowsNetworkInspector
 
     private static string DisplayName(NetworkInterface item) => $"{item.Name} ({item.NetworkInterfaceType})";
 
-    private static IReadOnlyList<NetworkObservation> ReadIpv4Routes(IReadOnlyDictionary<uint, string> namesByIndex)
+    private static string? TryExtractNetworkId(NetworkInterface item)
+    {
+        var match = NetworkIdPattern.Match($"{item.Name} {item.Description}");
+        return match.Success ? match.Value.ToLowerInvariant() : null;
+    }
+
+    private static IReadOnlyList<NetworkObservation> ReadIpv4Routes(
+        IReadOnlyDictionary<uint, (string Name, string? NetworkId)> namesByIndex)
     {
         var error = GetIpForwardTable2((ushort)AddressFamily.InterNetwork, out var table);
         if (error != 0) throw new Win32Exception((int)error);
@@ -92,8 +103,8 @@ public sealed class WindowsNetworkInspector
                     !namesByIndex.ContainsKey(row.InterfaceIndex)) continue;
                 var ip = new IPAddress(row.DestinationPrefix.Prefix.Address);
                 var prefix = Ipv4Prefix.Parse($"{ip}/{row.DestinationPrefix.PrefixLength}");
-                var name = namesByIndex.GetValueOrDefault(row.InterfaceIndex, $"ifIndex:{row.InterfaceIndex}");
-                result.Add(new NetworkObservation(prefix, "route", name, true));
+                var details = namesByIndex[row.InterfaceIndex];
+                result.Add(new NetworkObservation(prefix, "route", details.Name, true, details.NetworkId));
             }
             return result;
         }

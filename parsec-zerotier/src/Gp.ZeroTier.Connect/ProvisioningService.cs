@@ -11,6 +11,8 @@ public sealed class ProvisioningService(
     WindowsNetworkInspector networkInspector,
     ZeroTierManager zeroTier)
 {
+    public const string ReadyMessage = "Połączenie przygotowane. Możesz teraz uruchomić Parsec.";
+
     public async Task<string?> CleanupExpiredStateAsync(CancellationToken cancellationToken)
     {
         await telemetry.FlushAsync(cancellationToken);
@@ -26,7 +28,7 @@ public sealed class ProvisioningService(
 
         var normalizedStatus = status.Status.ToLowerInvariant();
         if (normalizedStatus == "active" && state.LeaseExpiresAt > DateTimeOffset.UtcNow)
-            return "Poprzednie połączenie nadal ma aktywny lease.";
+            return (await ResumeActiveStateAsync(state, status, cancellationToken)).Message;
         if (normalizedStatus is not ("revoked" or "expired" or "invalid")) return null;
 
         if (zeroTier.IsInstalled)
@@ -80,15 +82,21 @@ public sealed class ProvisioningService(
             var enrollment = await backend.EnrollAsync(token, nodeId, cancellationToken);
             if (!string.Equals(enrollment.AssignmentId, bootstrap.AssignmentId, StringComparison.Ordinal))
                 throw new LauncherException("ZT_ASSIGNMENT_MISMATCH", "Serwer zwrócił enrollment dla innego przydziału.");
-            state = new(enrollment.AssignmentId, bootstrap.NetworkId, enrollment.DeviceToken, enrollment.LeaseExpiresAt);
+            state = new(
+                enrollment.AssignmentId,
+                bootstrap.NetworkId,
+                enrollment.DeviceToken,
+                enrollment.LeaseExpiresAt,
+                bootstrap.AssignedPrefix,
+                bootstrap.VmIp,
+                enrollment.GuestIp);
             storage.SaveState(state);
             token = enrollment.DeviceToken;
             await telemetry.TrySendAsync(token, telemetry.Create("enrollment_completed", "PASS", zeroTierVersion: version), cancellationToken);
 
             var ready = await zeroTier.WaitUntilReadyAsync(bootstrap.NetworkId, enrollment.GuestIp, cancellationToken);
             if (ready is null || ready.InterfaceIndex == 0 ||
-                networkInspector.BestInterfaceFor(bootstrap.VmIp) != ready.InterfaceIndex ||
-                !await ZeroTierManager.CanReachAsync(bootstrap.VmIp, cancellationToken))
+                !await WaitForConnectivityAsync(bootstrap.VmIp, ready.InterfaceIndex, cancellationToken))
                 throw new LauncherException("ZT_CONNECTIVITY_FAILED", "Sieć została zestawiona, ale przypisana maszyna nie odpowiada.");
 
             var afterJoin = networkInspector.Capture();
@@ -99,7 +107,7 @@ public sealed class ProvisioningService(
                 token,
                 telemetry.Create("connectivity_ready", "PASS", zeroTierVersion: version, networkStatus: ready.Status, pathType: "UNKNOWN"),
                 cancellationToken);
-            return new("Połączenie przygotowane. Możesz teraz uruchomić Parsec.");
+            return new(ReadyMessage);
         }
         catch (Exception failure)
         {
@@ -130,6 +138,102 @@ public sealed class ProvisioningService(
         }
     }
 
+    private async Task<ProvisioningResult> ResumeActiveStateAsync(
+        ClientState state,
+        LeaseStatusResponse status,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(status.AssignmentId, state.AssignmentId, StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(status.NetworkId) ||
+            !string.Equals(status.NetworkId, state.NetworkId, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(status.AssignedPrefix) ||
+            string.IsNullOrWhiteSpace(status.VmIp) ||
+            string.IsNullOrWhiteSpace(status.GuestIp))
+            throw new LauncherException("ZT_RESUME_STATE_INVALID", "Serwer nie potwierdził parametrów aktywnego przydziału.");
+
+        var assigned = Ipv4Prefix.Parse(status.AssignedPrefix);
+        var token = state.DeviceToken;
+        var joined = false;
+        NetworkSnapshot? beforeJoin = null;
+        try
+        {
+            beforeJoin = networkInspector.Capture();
+            await RunPreflightAsync(assigned, token, beforeJoin, cancellationToken, state.NetworkId);
+
+            await zeroTier.EnsureInstalledAsync(cancellationToken);
+            var version = await zeroTier.GetVersionAsync(cancellationToken);
+
+            var secondSnapshot = networkInspector.Capture();
+            await RunPreflightAsync(assigned, token, secondSnapshot, cancellationToken, state.NetworkId);
+
+            await zeroTier.JoinAsync(state.NetworkId, cancellationToken);
+            joined = true;
+            await telemetry.TrySendAsync(token, telemetry.Create("join_completed", "PASS", zeroTierVersion: version), cancellationToken);
+
+            var refreshedState = state with
+            {
+                LeaseExpiresAt = status.LeaseExpiresAt ?? state.LeaseExpiresAt,
+                AssignedPrefix = status.AssignedPrefix,
+                VmIp = status.VmIp,
+                GuestIp = status.GuestIp
+            };
+            storage.SaveState(refreshedState);
+
+            var ready = await zeroTier.WaitUntilReadyAsync(state.NetworkId, status.GuestIp, cancellationToken);
+            if (ready is null || ready.InterfaceIndex == 0 ||
+                !await WaitForConnectivityAsync(status.VmIp, ready.InterfaceIndex, cancellationToken))
+                throw new LauncherException("ZT_CONNECTIVITY_FAILED", "Sieć została zestawiona, ale przypisana maszyna nie odpowiada.");
+
+            var afterJoin = networkInspector.Capture();
+            if (!WindowsNetworkInspector.PublicRouteUnchanged(beforeJoin, afterJoin, ready.InterfaceIndex))
+                throw new LauncherException("ZT_PUBLIC_ROUTE_CHANGED", "ZeroTier zmienił trasę używaną do ruchu publicznego.");
+
+            await telemetry.TrySendAsync(
+                token,
+                telemetry.Create("connectivity_ready", "PASS", zeroTierVersion: version, networkStatus: ready.Status, pathType: "UNKNOWN"),
+                cancellationToken);
+            return new(ReadyMessage);
+        }
+        catch (Exception failure)
+        {
+            var leaveSucceeded = !joined;
+            if (joined)
+            {
+                try
+                {
+                    await zeroTier.LeaveAsync(state.NetworkId, cancellationToken);
+                    leaveSucceeded = true;
+                    if (failure is LauncherException { Code: "ZT_PUBLIC_ROUTE_CHANGED" } && beforeJoin is not null)
+                    {
+                        var afterRollback = networkInspector.Capture();
+                        leaveSucceeded = beforeJoin.BestInterfaces.All(pair =>
+                            afterRollback.BestInterfaces.TryGetValue(pair.Key, out var current) && current == pair.Value);
+                    }
+                }
+                catch { }
+            }
+            if (failure is LauncherException launcherFailure && launcherFailure.Code != "ZT_NETWORK_CONFLICT")
+                await telemetry.TrySendAsync(token, telemetry.Create(EventNameFor(launcherFailure.Code), "FAIL", launcherFailure.Code), cancellationToken);
+            if (failure is LauncherException { Code: "ZT_PUBLIC_ROUTE_CHANGED" } && !leaveSucceeded)
+                throw new LauncherException("ZT_PUBLIC_ROUTE_RECOVERY_FAILED", "ZeroTier został odłączony, ale nie potwierdzono odzyskania wcześniejszego routingu publicznego.");
+            throw;
+        }
+    }
+
+    private async Task<bool> WaitForConnectivityAsync(string vmIp, uint zeroTierInterfaceIndex, CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (networkInspector.BestInterfaceFor(vmIp) == zeroTierInterfaceIndex &&
+                await ZeroTierManager.CanReachAsync(vmIp, cancellationToken))
+                return true;
+            await Task.Delay(1500, cancellationToken);
+        }
+        return false;
+    }
+
     private async Task CaptureAndPreflightAsync(Ipv4Prefix assigned, string token, CancellationToken cancellationToken)
     {
         NetworkSnapshot snapshot;
@@ -142,9 +246,14 @@ public sealed class ProvisioningService(
         await RunPreflightAsync(assigned, token, snapshot, cancellationToken);
     }
 
-    private async Task RunPreflightAsync(Ipv4Prefix assigned, string token, NetworkSnapshot snapshot, CancellationToken cancellationToken)
+    private async Task RunPreflightAsync(
+        Ipv4Prefix assigned,
+        string token,
+        NetworkSnapshot snapshot,
+        CancellationToken cancellationToken,
+        string? resumableNetworkId = null)
     {
-        var conflict = NetworkConflictDetector.Find(assigned, snapshot.Observations);
+        var conflict = NetworkConflictDetector.Find(assigned, snapshot.Observations, resumableNetworkId);
         if (conflict is null)
         {
             await telemetry.TrySendAsync(token, telemetry.Create("network_preflight_passed", "PASS"), cancellationToken);

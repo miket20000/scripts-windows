@@ -22,10 +22,25 @@ public partial class MainWindow : Window
 
     private async Task CleanupPreviousLeaseAsync()
     {
+        SetConnectionControlsEnabled(false);
+        StatusText.Text = "Sprawdzanie poprzedniego połączenia…";
         try
         {
             var message = await provisioning.CleanupExpiredStateAsync(CancellationToken.None);
-            if (message is not null) StatusText.Text = message;
+            if (message is null)
+            {
+                StatusText.Text = "Wprowadź kod otrzymany po przydzieleniu maszyny.";
+                SetConnectionControlsEnabled(true);
+            }
+            else
+            {
+                StatusText.Text = message;
+                SetConnectionControlsEnabled(message != ProvisioningService.ReadyMessage);
+            }
+        }
+        catch (LauncherException ex)
+        {
+            StatusText.Text = $"Nie można przygotować połączenia ({ex.Code}).\n{ex.Message}";
         }
         catch
         {
@@ -46,10 +61,12 @@ public partial class MainWindow : Window
         ConnectButton.IsEnabled = false;
         ActivationCode.IsEnabled = false;
         StatusText.Text = "Przygotowywanie połączenia…";
+        var ready = false;
         try
         {
             var result = await provisioning.ProvisionAsync(code, CancellationToken.None);
             StatusText.Text = result.Message;
+            ready = result.Message == ProvisioningService.ReadyMessage;
         }
         catch (LauncherException ex)
         {
@@ -61,8 +78,13 @@ public partial class MainWindow : Window
         }
         finally
         {
-            ConnectButton.IsEnabled = true;
-            ActivationCode.IsEnabled = true;
+            SetConnectionControlsEnabled(!ready);
         }
+    }
+
+    private void SetConnectionControlsEnabled(bool enabled)
+    {
+        ConnectButton.IsEnabled = enabled;
+        ActivationCode.IsEnabled = enabled;
     }
 }

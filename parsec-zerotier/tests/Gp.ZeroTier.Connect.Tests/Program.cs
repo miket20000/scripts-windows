@@ -10,8 +10,11 @@ var tests = new (string Name, Action Run)[]
     ("default route is ignored", () => NoConflict("172.30.253.8/29", "0.0.0.0/0")),
     ("down interface is ignored", DownInterfaceIsIgnored),
     ("same controlled resume is ignored", ControlledResumeIsIgnored),
+    ("controlled resume ignores own host routes", ControlledResumeHostRoutesAreIgnored),
+    ("controlled resume rejects broader own route", ControlledResumeBroaderRouteConflicts),
     ("invalid prefix rejected", InvalidPrefixRejected),
     ("bootstrap JSON contract", BootstrapJsonContract),
+    ("active status JSON contains safe resume topology", StatusResumeJsonContract),
     ("telemetry omits secrets and assignment", TelemetryContract),
     ("queue drops oldest by count", QueueDropsOldest),
     ("queue drops oldest by bytes", QueueDropsByBytes),
@@ -53,6 +56,25 @@ static void ControlledResumeIsIgnored()
     Assert(result is null, "own resumed route should not conflict");
 }
 
+static void ControlledResumeHostRoutesAreIgnored()
+{
+    var assigned = Ipv4Prefix.Parse("172.30.253.8/29");
+    var result = NetworkConflictDetector.Find(assigned, [
+        new(Ipv4Prefix.Parse("172.30.253.10/32"), "route", "ZeroTier", true, "1234567890abcdef"),
+        new(Ipv4Prefix.Parse("172.30.253.15/32"), "route", "ZeroTier", true, "1234567890abcdef")
+    ], "1234567890abcdef");
+    Assert(result is null, "own host routes inside the assigned prefix should not conflict");
+}
+
+static void ControlledResumeBroaderRouteConflicts()
+{
+    var result = NetworkConflictDetector.Find(
+        Ipv4Prefix.Parse("172.30.253.8/29"),
+        [new(Ipv4Prefix.Parse("172.30.0.0/16"), "route", "ZeroTier", true, "1234567890abcdef")],
+        "1234567890abcdef");
+    Assert(result is not null, "broader route on the resumed interface must still conflict");
+}
+
 static void InvalidPrefixRejected()
 {
     try { _ = Ipv4Prefix.Parse("172.30.253.0/33"); }
@@ -64,6 +86,18 @@ static void BootstrapJsonContract()
 {
     var json = JsonSerializer.Serialize(new BootstrapRequest("001-002"));
     Assert(json == "{\"activation_code\":\"001-002\"}", json);
+}
+
+static void StatusResumeJsonContract()
+{
+    const string json = """
+        {"status":"active","assignment_id":"asg_0123456789abcdef0123456789abcdef","lease_expires_at":"2026-07-21T01:35:00Z","network_id":"0123456789abcdef","assigned_prefix":"172.30.253.0/29","vm_ip":"172.30.253.1","guest_ip":"172.30.253.2"}
+        """;
+    var value = JsonSerializer.Deserialize<LeaseStatusResponse>(json);
+    if (value is null) throw new Exception("status response rejected");
+    Assert(value.NetworkId == "0123456789abcdef", "network id missing");
+    Assert(value.AssignedPrefix == "172.30.253.0/29", "assigned prefix missing");
+    Assert(value.VmIp == "172.30.253.1" && value.GuestIp == "172.30.253.2", "endpoint addresses missing");
 }
 
 static void TelemetryContract()
