@@ -68,9 +68,18 @@ the active VM assignment. Parsec is outside scope.
   itself was not separately attested.
   Independent readback confirmed install, join, enrollment, telemetry,
   reachability, and split routing. Parsec was not started by the launcher.
+- `PASS` — controlled Windows 11 MT `ZT_NETWORK_CONFLICT` scenario used the
+  current `b6d7c6c` framework-dependent candidate and an exact
+  `172.30.253.8/29` route on active Wi-Fi. The launcher stopped after bootstrap,
+  before install/join, displayed the exact assigned/conflicting prefixes,
+  conflict kind and interface, and sent `network_preflight_failed/BLOCKED` with
+  `ZT_NETWORK_CONFLICT`. Backend readback found no guest Node ID or enrollment;
+  Central remained at the five-VM `5/10` baseline. Bounded cleanup removed the
+  one owned route and test process, with no GP membership/state/address and
+  unchanged public routing/HTTPS. Evidence is in the devbox provisioning module
+  at `evidence/mt-network-conflict-20260912T065023Z.json`.
 - `BLOCKED` — dismissal remains intentionally unexecuted, as required by the
-  operator. Public-route failure rollback and the controlled
-  `ZT_NETWORK_CONFLICT` scenario remain unexecuted.
+  operator. Public-route failure rollback remains unexecuted.
 - `PASS` — Windows 10 Pro `L-WM66` runtime helper, SHA-256
   `48287e7fe86573d1d9cc7fbf948b7994b87f1e00f1ea60efab43c4d5bb3ad4ef`:
   native IP Helper snapshot and best-interface readback, real-prefix conflict,
@@ -199,9 +208,10 @@ the active VM assignment. Parsec is outside scope.
    baseline. MT local cleanup is complete. L-WM66 may still retain an
    `ACCESS_DENIED` local membership until its next manual launcher start; do not
    use dismissal to force cleanup.
-2. Run public-route rollback and `ZT_NETWORK_CONFLICT` as separate controlled
-   scenarios on an unassigned VM/guest; do not synthesize codes or authorize a
-   Central member by hand.
+2. `ZT_NETWORK_CONFLICT` is complete on MT. Verify its VM-PC2 lease reaches
+   natural `expired` state after `2026-09-12T08:18:13.755468Z`, without
+   dismissal. Public-route rollback remains a separate controlled scenario; do
+   not synthesize codes or authorize a Central member by hand.
 3. The unsigned self-contained EXE remains blocked by MT Device Guard. Do not
    bypass policy; production distribution requires organization Authenticode.
 4. Do not change Central or VM membership without the separately authorized
