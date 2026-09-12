@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.NetworkInformation;
 using Gp.ZeroTier.Connect.Core;
 
 namespace Gp.ZeroTier.Connect;
@@ -9,7 +10,7 @@ public sealed class ProvisioningService(
     TelemetryService telemetry,
     SecureStorage storage,
     WindowsNetworkInspector networkInspector,
-    ZeroTierManager zeroTier,
+    IZeroTierController zeroTier,
     ParsecPortableManager parsec)
 {
     public async Task<ProvisioningResult?> CleanupExpiredStateAsync(CancellationToken cancellationToken)
@@ -40,7 +41,7 @@ public sealed class ProvisioningService(
             await telemetry.TrySendAsync(state.DeviceToken, telemetry.Create("parsec_cleanup_failed", "FAIL", ex.Code), cancellationToken);
             throw;
         }
-        if (zeroTier.IsInstalled)
+        if (await zeroTier.IsInstalledAsync(cancellationToken))
         {
             await zeroTier.EnsureInstalledAsync(cancellationToken);
             await zeroTier.LeaveAsync(state.NetworkId, cancellationToken);
@@ -261,11 +262,23 @@ public sealed class ProvisioningService(
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (networkInspector.BestInterfaceFor(vmIp) == zeroTierInterfaceIndex &&
-                await ZeroTierManager.CanReachAsync(vmIp, cancellationToken))
+                await CanReachAsync(vmIp, cancellationToken))
                 return true;
             await Task.Delay(1500, cancellationToken);
         }
         return false;
+    }
+
+    private static async Task<bool> CanReachAsync(string vmIp, CancellationToken cancellationToken)
+    {
+        using var ping = new Ping();
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var reply = await ping.SendPingAsync(vmIp, 3000);
+            return reply.Status == IPStatus.Success;
+        }
+        catch (PingException) { return false; }
     }
 
     private async Task CaptureAndPreflightAsync(Ipv4Prefix assigned, string token, CancellationToken cancellationToken)

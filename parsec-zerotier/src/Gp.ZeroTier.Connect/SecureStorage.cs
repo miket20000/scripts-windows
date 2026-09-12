@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -16,7 +15,6 @@ public sealed class SecureStorage
     private readonly string queuePath;
     private readonly string instancePath;
     private readonly string droppedPath;
-    private bool aclApplied;
 
     public SecureStorage(string directory)
     {
@@ -84,17 +82,6 @@ public sealed class SecureStorage
     private void EnsureDirectory()
     {
         Directory.CreateDirectory(directory);
-        if (aclApplied) return;
-        using var process = Process.Start(new ProcessStartInfo
-        {
-            FileName = Path.Combine(Environment.SystemDirectory, "icacls.exe"),
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            ArgumentList = { directory, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F" }
-        });
-        if (process is null || !process.WaitForExit(10_000) || process.ExitCode != 0)
-            throw new LauncherException("ZT_SECURE_STORAGE_ACL_FAILED", "Nie można zabezpieczyć katalogu stanu aplikacji.");
-        aclApplied = true;
     }
 
     private static class Dpapi

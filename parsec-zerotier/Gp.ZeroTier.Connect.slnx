@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/Gp.ZeroTier.Connect.Core/Gp.ZeroTier.Connect.Core.csproj" />
+  <Project Path="src/Gp.ZeroTier.Connect.Elevated/Gp.ZeroTier.Connect.Elevated.csproj" />
   <Project Path="src/Gp.ZeroTier.Connect/Gp.ZeroTier.Connect.csproj" />
   <Project Path="tests/Gp.ZeroTier.Connect.Tests/Gp.ZeroTier.Connect.Tests.csproj" />
 </Solution>

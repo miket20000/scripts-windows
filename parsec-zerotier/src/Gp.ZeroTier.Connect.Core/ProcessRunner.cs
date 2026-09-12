@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Gp.ZeroTier.Connect;
+namespace Gp.ZeroTier.Connect.Core;
 
 public sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
 

@@ -9,8 +9,18 @@ bundled Parsec Portable client for that assignment.
 
 ## Current implementation
 
-- .NET 10 WPF `win-x64`, self-contained single-file publish configuration and
-  `requireAdministrator` manifest are under `src/Gp.ZeroTier.Connect`.
+- .NET 10 WPF `win-x64` main launcher is self-contained and uses `asInvoker`.
+  It refuses to continue if manually started with an elevated token, so Parsec
+  always inherits the ordinary interactive-user token.
+- A separate self-contained `GP-ZeroTier-Connect.Elevated.exe` carries the
+  `requireAdministrator` manifest. ZeroTier install/version/signature/CLI logic
+  and state-directory ACL preparation exist only in that helper project.
+- Main/helper IPC uses a random per-process named pipe whose DACL admits only
+  Administrators. The launcher verifies the connected helper PID; the helper
+  verifies the server PID and reads the launcher's user SID directly from its
+  process token. The 16 KiB framed protocol accepts only nine exact operations
+  and never carries activation codes, backend tokens, assignment IDs, paths or
+  arbitrary process arguments.
 - The cross-platform core contains backend JSON contracts, IPv4 prefix parsing,
   overlap detection, and bounded telemetry queue logic.
 - Bootstrap uses `123-456`; Central credentials never enter the launcher.
@@ -42,9 +52,11 @@ bundled Parsec Portable client for that assignment.
 - Successful provisioning or resume leaves the ready message visible and
   disables code entry. Expired/revoked cleanup removes only the saved GP
   Network ID and state, then leaves the controls available for a future lease.
-- State and the offline telemetry queue use machine-scope DPAPI and a SYSTEM /
-  Administrators-only ACL. Telemetry excludes credentials and broad host/network
-  inventory.
+- State and the offline telemetry queue retain machine-scope DPAPI under
+  `%ProgramData%`. The helper replaces the root DACL with exactly SYSTEM,
+  Administrators and the verified launcher-user SID, allowing the unelevated UI
+  to preserve existing state without granting broader Users access. Telemetry
+  excludes credentials and broad host/network inventory.
 - Parsec Portable `150-104a` is embedded as a 3,419,147-byte ZIP with SHA-256
   `ac7483a8a0021c79492671f06966a52ba2527fcc17a2ddff5fcc148d91b07b55`.
   Extraction is fail-closed against traversal, duplicates, unexpected entries,
@@ -65,6 +77,32 @@ bundled Parsec Portable client for that assignment.
 
 ## Verification
 
+- `PASS` — final Core suite after the privilege split: 29/29. Five IPC cases
+  cover the exact request allowlist, argument-smuggling rejection, absence of
+  credential/path fields, bounded frame roundtrip and oversized-frame rejection.
+- `PASS` — final Release build of Core, elevated helper and WPF launcher on
+  Ubuntu with .NET SDK 10: zero warnings and zero errors.
+- `PASS` — final publish contains exactly two files: unelevated
+  `GP-ZeroTier-Connect.exe`, 143,303,935 bytes, SHA-256
+  `994f1ef40afb05a13bdc3bc92b92534e4aaaea5b5889b7732e8b730ef868e8de`,
+  and `GP-ZeroTier-Connect.Elevated.exe`, 73,643,254 bytes, SHA-256
+  `dd3fa15ba0deccc2d84f0abacd8977d1dbc7782dc609029f477a51dff1045ddc`.
+  Static PE resource readback found `asInvoker` only in the main manifest and
+  `requireAdministrator` in the helper manifest; the Parsec ZIP resource remains
+  embedded in the main EXE.
+- `FAIL` (development, preserved) — the first full helper build used source-
+  generated `LibraryImport` without enabling unsafe code. It was replaced by
+  the smaller classic `DllImport` declarations; the corrected build above is
+  the final candidate.
+- `FAIL` (tooling, preserved) — sandboxed restore/build attempts ended without
+  useful MSBuild diagnostics because of the environment's stream restriction.
+  The same isolated-tree commands rerun through the intended host context
+  produced the explicit development failure above and then final PASS results.
+- `BLOCKED` — Linux cannot execute the Windows named-pipe ACL/PID checks, UAC
+  consent or over-the-shoulder credentials, parent-token SID readback, DACL
+  replacement, DPAPI access, helper signature matching, ZeroTier operations or
+  confirm Parsec's medium-integrity token. No Windows runtime test or deployment
+  was authorized or performed in this stage.
 - `PASS` — final cross-platform Core suite: 24/24. Six new cases cover safe
   assignment IDs, archive-root normalization, traversal rejection, the hard
   guest profile, appdata/DLL binding and exact Parsec publisher matching.
@@ -87,10 +125,10 @@ bundled Parsec Portable client for that assignment.
   pre-created empty `.zip`, which `zip` rejected as an invalid existing archive.
   Packaging was repeated in a fresh temporary directory and the final archive
   passed hash, entry-list and decompression readback.
-- `BLOCKED` — Linux cannot validate Windows Authenticode status, actual portable
-  extraction/ACL inheritance, GUI visibility, behavior under the launcher's
-  elevated token, exact-path process cleanup, or natural expiry cleanup. No
-  Windows runtime rollout was authorized or performed in this stage.
+- `BLOCKED` (superseded elevated-parent candidate) — Linux could not validate
+  Windows Authenticode status, portable extraction/ACL inheritance, GUI
+  visibility, exact-path process cleanup or natural expiry cleanup. No Windows
+  runtime rollout was performed for that candidate.
 - `PASS` — cross-platform Core tests: 18/18. They cover exact, covering and
   contained prefix collisions; unrelated/default/down/resume cases; invalid
   prefixes; own `/32` routes during resume; rejection of a broader own-interface
@@ -248,10 +286,14 @@ bundled Parsec Portable client for that assignment.
   resume, natural expiry and next-start cleanup are verified.
 - The launcher intentionally has no background service. Central revoke is
   immediate; local `leave` occurs on the next launcher start.
-- The WPF launcher still uses `requireAdministrator`; therefore directly started
-  Parsec inherits an elevated token. This stage does not split privileged and
-  interactive components. Windows acceptance must confirm that the UI appears
-  in the intended Explorer session and that this execution model is acceptable.
+- The distribution is now an inseparable two-file unit. A signed main EXE
+  requires a valid helper signed by the identical certificate thumbprint. An
+  unsigned pair is accepted only for isolated development acceptance; production
+  signing of both EXEs remains mandatory.
+- The helper pipe intentionally grants access to Administrators rather than
+  `CurrentUserOnly`, allowing UAC over-the-shoulder elevation under a different
+  administrator account. Mutual process-PID verification and the helper's
+  launcher-token SID readback retain binding to the initiating UI process.
 - Portable login state is assignment-scoped and deleted during normal next-start
   expiry/revocation cleanup. If the launcher is never reopened after expiry,
   local Parsec files remain until the next cleanup run; Central revocation still
@@ -269,17 +311,18 @@ bundled Parsec Portable client for that assignment.
 
 ## START HERE
 
-1. The embedded-Parsec candidate is built but not deployed. Before distribution,
-   run a separately authorized isolated Windows assignment and read back: archive
-   extraction and ACLs, all four Authenticode signatures, visible Parsec UI,
-   active-resume idempotence, no ZeroTier rollback on forced Parsec launch
-   failure, and exact-path Parsec removal on natural expiry/next start.
-2. Explicitly decide whether running Parsec with the launcher's inherited
-   elevated token is acceptable. If not, split the privileged ZeroTier operation
-   from the interactive Parsec launch in a separate scoped change.
-3. The production EXE still requires organization Authenticode signing. The
-   unsigned self-contained EXE remains blocked by MT Device Guard; do not bypass
-   that policy.
+1. The least-privilege two-EXE candidate is built but not deployed. Before
+   distribution, run a separately authorized isolated Windows standard-user
+   assignment, including UAC over-the-shoulder credentials, and read back the
+   pipe/parent PID binding, exact state DACL, preserved DPAPI state, ZeroTier
+   install/join/rollback/cleanup and Parsec's non-elevated token.
+2. Exercise active resume, UAC cancellation, missing/replaced/mismatched-signature
+   helper, forced helper disconnect, forced Parsec launch failure and natural
+   expiry cleanup. Confirm every failure retains the existing rollback and
+   telemetry semantics without exposing tokens across IPC.
+3. Production distribution requires organization Authenticode signing of both
+   EXEs with the same certificate. The unsigned pair remains blocked by MT
+   Device Guard; do not bypass that policy.
 4. Keep Parsec login interactive unless a separately reviewed supported vendor
    authentication mechanism is selected. Do not inject credentials into CLI
    arguments, config files, telemetry or logs.

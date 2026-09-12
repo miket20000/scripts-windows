@@ -33,10 +33,14 @@ czynności w Parsec to:
      | Windows  |   P2P / relay   |  Windows  |
      +----+-----+                 +-----+-----+
           |                             |
-     ZeroTier                       launcher.exe
+     ZeroTier                  launcher.exe (asInvoker)
      Parsec Host                        |
-                                       +-- przygotowuje ZeroTier
-                                       +-- uruchamia Parsec Portable
+                                       +-- prywatny, ograniczony IPC
+                                       |        |
+                                       |        v
+                                       |   helper.exe (UAC/admin)
+                                       |        +-- operacje ZeroTier
+                                       +-- uruchamia Parsec bez elevation
                                        |
                                        v
                                 Parsec Portable
@@ -87,7 +91,11 @@ Parsec działa w wersji **Portable**.
 
 ## 5. Launcher
 
-Launcher jest warstwą orkiestrującą przygotowanie środowiska.
+Launcher jest warstwą orkiestrującą przygotowanie środowiska. Proces UI działa
+jako zwykły użytkownik. Osobny helper z manifestem `requireAdministrator` jest
+uruchamiany przez UAC i wykonuje wyłącznie zamknięty zestaw operacji ZeroTier
+oraz przygotowanie ACL katalogu stanu. Kody aktywacyjne i tokeny `vm-manager`
+pozostają w procesie użytkownika.
 
 Docelowy przepływ:
 
@@ -205,7 +213,8 @@ Przyjmujemy zasadę:
 
   Warstwa    Odpowiedzialność
   ---------- -----------------------------------------------------
-  Launcher   automatyzacja przygotowania środowiska
+  Launcher   API backendu, preflight, telemetria i start Parsec bez elevation
+  Helper     podwyższona instalacja i ograniczone operacje CLI ZeroTier
   ZeroTier   connectivity guest ↔ host
   Parsec     uwierzytelnienie użytkownika i sesja remote desktop
 
@@ -260,19 +269,17 @@ do których nie został przypisany.
 Ograniczenie widoczności hosta w Parsec jest dodatkową warstwą
 aplikacyjną, a nie zamiennikiem izolacji sieciowej.
 
-## 12. Otwarte zagadnienie przed implementacją
+## 12. Granica uprawnień
 
-Przed implementacją należy zweryfikować sposób deploymentu ZeroTier na
-czystej maszynie Windows, w szczególności:
+Dystrybucja składa się z dwóch podpisanych plików EXE. Launcher tworzy losowy
+named pipe dostępny wyłącznie dla administratora i uruchamia dokładny helper
+przez UAC. Obie strony porównują PID procesu połączonego z pipe, a helper
+akceptuje wyłącznie jawne operacje: przygotowanie ACL stanu, wykrycie/instalację
+przypiętej wersji ZeroTier, odczyt wersji i Node ID, `join`, `leave` oraz
+oczekiwanie na gotowość dokładnej sieci. Protokół nie obsługuje dowolnego
+polecenia, ścieżki ani argumentów procesu.
 
-1.  czy instalacja wymaga uprawnień administratora,
-2.  jak launcher instaluje/uruchamia wymagany komponent lub usługę,
-3.  jak bezinterakcyjnie wykonuje `join network`,
-4.  jak realizowana jest autoryzacja nowego peera,
-5.  jak ustawiany jest wymagany routing,
-6.  jak launcher potwierdza osiągalność przypisanego hosta,
-7.  jak wykonywany jest cleanup po zakończeniu sesji.
-
-Rozstrzygnięcie tych punktów determinuje, czy rozwiązanie może być
-dostarczone użytkownikowi jako pojedynczy `launcher.exe` z minimalną
-interakcją.
+Proces UI wykonuje odczyty tras, komunikację z `vm-manager`, dostęp do stanu
+DPAPI po przygotowaniu ACL, telemetrię i obsługę Parsec. Jeżeli UI zostanie ręcznie uruchomione
+z podwyższonym tokenem, odmawia kontynuacji. Dzięki temu Parsec zawsze dziedziczy
+zwykły token procesu interaktywnego.

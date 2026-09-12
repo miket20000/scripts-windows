@@ -8,6 +8,7 @@ public partial class MainWindow : Window
 {
     private static readonly Regex CodePattern = new("^[0-9]{3}-[0-9]{3}$", RegexOptions.CultureInvariant);
     private readonly ProvisioningService provisioning;
+    private readonly ElevatedZeroTierClient zeroTier;
 
     public MainWindow()
     {
@@ -16,9 +17,20 @@ public partial class MainWindow : Window
         var backend = new BackendClient(new HttpClient { BaseAddress = options.BackendBaseUri, Timeout = TimeSpan.FromSeconds(20) });
         var storage = new SecureStorage(options.StateDirectory);
         var telemetry = new TelemetryService(backend, storage);
+        zeroTier = new ElevatedZeroTierClient();
         provisioning = new ProvisioningService(backend, telemetry, storage, new WindowsNetworkInspector(),
-            new ZeroTierManager(options), new ParsecPortableManager(options));
-        Loaded += async (_, _) => await CleanupPreviousLeaseAsync();
+            zeroTier, new ParsecPortableManager(options));
+        Loaded += async (_, _) =>
+        {
+            if (PrivilegeInspector.IsElevated())
+            {
+                SetConnectionControlsEnabled(false);
+                StatusText.Text = "Uruchom aplikację zwykłym kliknięciem, bez opcji „Uruchom jako administrator”.";
+                return;
+            }
+            await CleanupPreviousLeaseAsync();
+        };
+        Closed += async (_, _) => await zeroTier.DisposeAsync();
     }
 
     private async Task CleanupPreviousLeaseAsync()
@@ -27,6 +39,7 @@ public partial class MainWindow : Window
         StatusText.Text = "Sprawdzanie poprzedniego połączenia…";
         try
         {
+            await zeroTier.PrepareStorageAccessAsync(CancellationToken.None);
             var result = await provisioning.CleanupExpiredStateAsync(CancellationToken.None);
             if (result is null)
             {

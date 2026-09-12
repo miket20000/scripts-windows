@@ -26,7 +26,12 @@ var tests = new (string Name, Action Run)[]
     ("Parsec archive traversal is rejected", ParsecArchiveTraversalIsRejected),
     ("Parsec guest profile is enforced", ParsecGuestProfileIsEnforced),
     ("Parsec appdata binds expected DLL", ParsecAppDataBindsExpectedDll),
-    ("Parsec official publisher matches", ParsecOfficialPublisherMatches)
+    ("Parsec official publisher matches", ParsecOfficialPublisherMatches),
+    ("privileged request allowlist accepts exact shapes", PrivilegedRequestAllowlistAcceptsExactShapes),
+    ("privileged request allowlist rejects argument smuggling", PrivilegedRequestAllowlistRejectsArgumentSmuggling),
+    ("privileged contract omits credentials and paths", PrivilegedContractOmitsCredentialsAndPaths),
+    ("privileged IPC frame roundtrip", PrivilegedIpcFrameRoundtrip),
+    ("privileged IPC rejects oversized frame", PrivilegedIpcRejectsOversizedFrame)
 };
 
 var failed = 0;
@@ -205,6 +210,56 @@ static void ParsecOfficialPublisherMatches()
     Assert(ParsecPortablePolicy.IsExpectedPublisherSubject("vusb/parsec-vud.exe", "CN=Parsec, O=\"Parsec Cloud, Inc.\", C=US"), "official VUSB organization rejected");
     Assert(!ParsecPortablePolicy.IsExpectedPublisherSubject("parsecd.exe", "CN=Parsec, O=Parsec Cloud, Inc., C=US"), "wrong per-file organization accepted");
     Assert(!ParsecPortablePolicy.IsExpectedPublisherSubject("unknown.exe", "CN=Parsec, O=Unity Technologies SF, C=US"), "unknown binary accepted");
+}
+
+static void PrivilegedRequestAllowlistAcceptsExactShapes()
+{
+    const string id = "0123456789abcdef0123456789abcdef";
+    Assert(PrivilegedRequestPolicy.IsValid(new(id, PrivilegedOperations.PrepareStorage)), "prepare storage rejected");
+    Assert(PrivilegedRequestPolicy.IsValid(new(id, PrivilegedOperations.EnsureInstalled)), "install rejected");
+    Assert(PrivilegedRequestPolicy.IsValid(new(id, PrivilegedOperations.Join, "0123456789abcdef")), "join rejected");
+    Assert(PrivilegedRequestPolicy.IsValid(new(id, PrivilegedOperations.WaitUntilReady, "0123456789abcdef", "172.30.253.2")), "readiness rejected");
+}
+
+static void PrivilegedRequestAllowlistRejectsArgumentSmuggling()
+{
+    const string id = "0123456789abcdef0123456789abcdef";
+    Assert(!PrivilegedRequestPolicy.IsValid(new(id, "run", "msiexec.exe")), "unknown operation accepted");
+    Assert(!PrivilegedRequestPolicy.IsValid(new(id, PrivilegedOperations.EnsureInstalled, "0123456789abcdef")), "unexpected install argument accepted");
+    Assert(!PrivilegedRequestPolicy.IsValid(new(id, PrivilegedOperations.Join, "../../dangerous")), "path-like network id accepted");
+    Assert(!PrivilegedRequestPolicy.IsValid(new(id, PrivilegedOperations.WaitUntilReady, "0123456789abcdef", "not-an-ip")), "invalid IP accepted");
+    Assert(!PrivilegedRequestPolicy.IsValid(new("request", PrivilegedOperations.Shutdown)), "invalid request id accepted");
+}
+
+static void PrivilegedContractOmitsCredentialsAndPaths()
+{
+    var names = typeof(PrivilegedRequest).GetProperties().Select(value => value.Name).ToArray();
+    foreach (var forbidden in new[] { "Token", "Activation", "Assignment", "Path", "Arguments", "Command" })
+        Assert(!names.Any(name => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)), $"forbidden IPC field present: {forbidden}");
+}
+
+static void PrivilegedIpcFrameRoundtrip()
+{
+    using var stream = new MemoryStream();
+    var expected = new PrivilegedRequest(
+        "0123456789abcdef0123456789abcdef",
+        PrivilegedOperations.WaitUntilReady,
+        "0123456789abcdef",
+        "172.30.253.2");
+    PrivilegedIpcFrame.WriteAsync(stream, expected, CancellationToken.None).GetAwaiter().GetResult();
+    stream.Position = 0;
+    var actual = PrivilegedIpcFrame.ReadAsync<PrivilegedRequest>(stream, CancellationToken.None).GetAwaiter().GetResult();
+    Assert(actual == expected, "IPC frame changed the request");
+}
+
+static void PrivilegedIpcRejectsOversizedFrame()
+{
+    using var stream = new MemoryStream();
+    stream.Write(BitConverter.GetBytes(PrivilegedIpcFrame.MaxPayloadBytes + 1));
+    stream.Position = 0;
+    try { _ = PrivilegedIpcFrame.ReadAsync<PrivilegedRequest>(stream, CancellationToken.None).GetAwaiter().GetResult(); }
+    catch (InvalidDataException) { return; }
+    throw new Exception("oversized IPC frame accepted");
 }
 
 static void Assert(bool condition, string message)

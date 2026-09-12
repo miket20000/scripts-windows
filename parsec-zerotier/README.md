@@ -7,7 +7,17 @@ ZeroTier connectivity is confirmed.
 
 ## Safety properties
 
-- Requests a UAC elevation through `requireAdministrator`.
+- Runs `GP-ZeroTier-Connect.exe` as the interactive user with an `asInvoker`
+  manifest. If it detects an elevated token, it refuses to continue, ensuring
+  that Parsec Portable cannot inherit administrator rights from the launcher.
+- Starts the separate `GP-ZeroTier-Connect.Elevated.exe` through UAC only for
+  the bounded ZeroTier and state-ACL operations that require administrator
+  rights. The helper pins its own MSI URL, hash, version and CLI behavior.
+- Uses one random named pipe per launcher process. Its ACL admits only an
+  elevated administrator; both peers verify the other process PID. IPC frames
+  are length-bounded and accept only a fixed operation/argument allowlist.
+  Activation codes, backend tokens, assignment IDs and filesystem paths never
+  cross this channel.
 - Accepts only a six-digit activation code in `123-456` form.
 - Calls `vm-manager`; no ZeroTier Central credential is present in the client.
 - Performs two IPv4 collision checks before `join`, using Windows IP Helper API
@@ -31,8 +41,10 @@ ZeroTier connectivity is confirmed.
   Controls are disabled for the entire startup status/resume check, preventing
   a second code submission from racing an active saved lease.
 - Stores the lease token and bounded telemetry queue with machine-scope DPAPI
-  under `%ProgramData%\GP\ZeroTierConnect`; directory ACL permits only SYSTEM
-  and local Administrators.
+  under `%ProgramData%\GP\ZeroTierConnect`. The helper sets a protected ACL for
+  SYSTEM, local Administrators and the verified SID of the launcher process,
+  preserving existing encrypted state while exposing it only after UAC-approved
+  preparation for that interactive user.
 - Telemetry has an explicit, PII-minimized schema. Codes, bearer tokens, MAC,
   SSID, DNS, gateways, usernames, and full route tables are never fields in an
   event.
@@ -42,7 +54,7 @@ variable cannot redirect activation codes or tokens to another server.
 
 ## Parsec Portable
 
-The single-file launcher embeds `codinggiants-parsec-150-104a.zip` (SHA-256
+The main single-file launcher embeds `codinggiants-parsec-150-104a.zip` (SHA-256
 `ac7483a8a0021c79492671f06966a52ba2527fcc17a2ddff5fcc148d91b07b55`).
 Before each launch it validates the pinned PE hashes, the `appdata.json` DLL
 binding, the student profile including `app_host=false`, and valid Authenticode
@@ -69,7 +81,11 @@ dotnet publish src/Gp.ZeroTier.Connect/Gp.ZeroTier.Connect.csproj --configuratio
 
 The publish output is under
 `src/Gp.ZeroTier.Connect/bin/Release/net10.0-windows/win-x64/publish/`.
-Production distribution additionally requires organization Authenticode signing.
+It contains exactly the main launcher and its elevated helper; both files are
+required. Production distribution requires both EXEs to be Authenticode-signed
+with the same organization certificate. At runtime a signed main executable
+rejects an unsigned helper or a helper signed by another certificate; a pair of
+unsigned binaries is accepted only to permit isolated development acceptance.
 
 ## Backend contract
 
@@ -88,9 +104,11 @@ not contain it. See `Core/Contracts.cs` for the exact JSON names.
 
 ## Required Windows acceptance
 
-The Linux build cannot validate DPAPI, ACL application, IP Helper ABI, MSI/UAC,
-ZeroTier CLI output, routing, rollback, Parsec Authenticode readback, portable
-extraction, GUI startup, exact-path process cleanup, or user-session behavior.
+The Linux build cannot validate DPAPI migration, Windows ACL application,
+named-pipe PID/ACL enforcement, standard-user UAC over-the-shoulder behavior,
+IP Helper ABI, MSI/UAC, ZeroTier CLI output, routing, rollback, Parsec
+Authenticode readback, portable extraction, GUI startup, exact-path process
+cleanup, or user-session behavior.
 Before distribution, execute those checks on an isolated Windows guest with an
 expendable test assignment. Never perform acceptance against an unrelated
 existing ZeroTier membership.

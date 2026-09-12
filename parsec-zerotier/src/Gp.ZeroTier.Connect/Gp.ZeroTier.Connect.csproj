@@ -19,7 +19,17 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Gp.ZeroTier.Connect.Core/Gp.ZeroTier.Connect.Core.csproj" />
+    <ProjectReference Include="../Gp.ZeroTier.Connect.Elevated/Gp.ZeroTier.Connect.Elevated.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="PublishElevatedHelper" AfterTargets="Publish">
+    <MSBuild Projects="../Gp.ZeroTier.Connect.Elevated/Gp.ZeroTier.Connect.Elevated.csproj"
+             Targets="Publish"
+             BuildInParallel="false"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;PublishSingleFile=true;PublishTrimmed=false" />
+    <Copy SourceFiles="../Gp.ZeroTier.Connect.Elevated/bin/$(Configuration)/net10.0-windows/$(RuntimeIdentifier)/publish/GP-ZeroTier-Connect.Elevated.exe"
+          DestinationFolder="$(PublishDir)" />
+    <Delete Files="$(PublishDir)GP-ZeroTier-Connect.Elevated.runtimeconfig.json" />
+  </Target>
   <ItemGroup>
     <EmbeddedResource Include="Assets/codinggiants-parsec-150-104a.zip" LogicalName="Gp.ZeroTier.Connect.Assets.codinggiants-parsec-150-104a.zip" />
   </ItemGroup>
